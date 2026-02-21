@@ -7,6 +7,10 @@ import fs from 'fs-extra';
 import { TaskFile, Task, Transition, AcceptanceCriterion, TestScenario, StakeholderReview } from './types.js';
 import { ROLE_SYSTEM_PROMPTS, RolePromptConfig } from './rolePrompts.js';
 import { PipelineRole } from './types.js';
+import { ConcurrencyConflictError } from './errors.js';
+
+// Re-export so existing imports of ConcurrencyConflictError from DatabaseHandler still work.
+export { ConcurrencyConflictError } from './errors.js';
 
 /** Row interface for the dev_queue table (feature-level, not task-level). */
 export interface DevQueueRow {
@@ -56,7 +60,7 @@ export class DatabaseHandler {
   private validateSchemaIntegrity(): void {
     const expectedSchema: Record<string, string[]> = {
       features: ['feature_slug', 'feature_name', 'created_at', 'last_modified'],
-      tasks: ['feature_slug', 'task_id', 'title', 'description', 'status', 'order_of_execution'],
+      tasks: ['feature_slug', 'task_id', 'title', 'description', 'status', 'order_of_execution', 'version'],
       transitions: ['feature_slug', 'task_id', 'from_status', 'to_status', 'timestamp'],
       acceptance_criteria: ['feature_slug', 'task_id', 'criterion_id', 'criterion', 'priority'],
       test_scenarios: ['feature_slug', 'task_id', 'scenario_id', 'title', 'description', 'priority'],
@@ -1014,6 +1018,29 @@ echo "Starting dev workflow for {featureName}..."
         INSERT OR IGNORE INTO _migrations (name, applied_at) VALUES (?, ?)
       `).run('004_fix_clarifications_column', new Date().toISOString());
     }
+
+    // Migration 005: Add optimistic concurrency version column to tasks
+    const versionMigration = this.db.prepare(`
+      SELECT * FROM _migrations WHERE name = '005_add_task_version'
+    `).get();
+
+    if (!versionMigration) {
+      try {
+        this.db.exec(`ALTER TABLE tasks ADD COLUMN version INTEGER NOT NULL DEFAULT 1`);
+      } catch (e) {
+        // Column may already exist
+        const tableInfo = this.db.prepare('PRAGMA table_info(tasks)').all() as any[];
+        const hasVersion = tableInfo.some((col: any) => col.name === 'version');
+        if (!hasVersion) {
+          throw new Error(
+            `Fatal: Migration 005 (add_task_version) failed: ${e instanceof Error ? e.message : String(e)}`
+          );
+        }
+      }
+      this.db.prepare(`
+        INSERT OR IGNORE INTO _migrations (name, applied_at) VALUES (?, ?)
+      `).run('005_add_task_version', new Date().toISOString());
+    }
   }
 
   /**
@@ -1178,7 +1205,8 @@ echo "Starting dev workflow for {featureName}..."
       transitions,
       stakeholderReview,
       orderOfExecution: row.order_of_execution,
-      tags: row.tags ? JSON.parse(row.tags) : []
+      tags: row.tags ? JSON.parse(row.tags) : [],
+      version: row.version ?? 1
     };
   }
 
@@ -1285,6 +1313,19 @@ echo "Starting dev workflow for {featureName}..."
           last_modified = excluded.last_modified
       `).run(repo, data.featureSlug, data.featureName, data.createdAt || now, now);
 
+      // Optimistic concurrency: verify each task's version matches the DB before overwriting
+      for (const task of data.tasks) {
+        if (task.version !== undefined) {
+          const dbRow = this.db.prepare(
+            `SELECT version FROM tasks WHERE repo_name = ? AND feature_slug = ? AND task_id = ?`
+          ).get(repo, data.featureSlug, task.taskId) as { version: number } | undefined;
+
+          if (dbRow !== undefined && dbRow.version !== task.version) {
+            throw new ConcurrencyConflictError(task.taskId, task.version, dbRow.version);
+          }
+        }
+      }
+
       // Delete existing tasks and related data (CASCADE will handle related tables)
       this.db.prepare(`DELETE FROM tasks WHERE repo_name = ? AND feature_slug = ?`).run(repo, data.featureSlug);
 
@@ -1297,6 +1338,10 @@ echo "Starting dev workflow for {featureName}..."
     try {
       saveTransaction(taskFile, repoName);
     } catch (error) {
+      // Re-throw concurrency conflicts without wrapping so callers can handle them specifically
+      if (error instanceof ConcurrencyConflictError) {
+        throw error;
+      }
       throw new Error(
         `Failed to save feature: ${error instanceof Error ? error.message : String(error)}`
       );
@@ -1307,13 +1352,16 @@ echo "Starting dev workflow for {featureName}..."
    * Save a single task with all related data
    */
   private saveTask(featureSlug: string, task: Task, repoName: string = 'default'): void {
+    // Increment version on each write (optimistic concurrency)
+    const nextVersion = (task.version !== undefined ? task.version : 0) + 1;
+
     // Insert task
     this.db.prepare(`
       INSERT INTO tasks (
         repo_name, feature_slug, task_id, title, description, status,
         assigned_to, estimated_hours, order_of_execution,
-        tags, dependencies, out_of_scope
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        tags, dependencies, out_of_scope, version
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       repoName,
       featureSlug,
@@ -1326,7 +1374,8 @@ echo "Starting dev workflow for {featureName}..."
       task.orderOfExecution,
       task.tags ? JSON.stringify(task.tags) : null,
       task.dependencies ? JSON.stringify(task.dependencies) : null,
-      task.outOfScope ? JSON.stringify(task.outOfScope) : null
+      task.outOfScope ? JSON.stringify(task.outOfScope) : null,
+      nextVersion
     );
 
     // Insert transitions

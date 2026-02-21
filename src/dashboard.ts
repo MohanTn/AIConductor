@@ -17,6 +17,7 @@ import { createTaskRoutes } from './dashboard/routes/task.routes.js';
 import { createRefinementRoutes } from './dashboard/routes/refinement.routes.js';
 import { createSettingsRoutes } from './dashboard/routes/settings.routes.js';
 import { createQueueRoutes } from './dashboard/routes/queue.routes.js';
+import { errorMiddleware } from './dashboard/middleware/errorHandler.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -77,6 +78,9 @@ export function startDashboard(port: number = 5111) {
     wsManager.broadcast(event);
     res.json({ success: true, connections: wsManager.getConnectionCount() });
   });
+
+  // Centralized error handling middleware — must be registered AFTER all routes
+  app.use(errorMiddleware);
 
   // Create HTTP server to support both Express and WebSocket
   const httpServer = createServer(app);

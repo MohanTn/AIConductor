@@ -144,6 +144,8 @@ export interface Task {
   order?: number;
   orderOfExecution: number;
   tags?: string[];
+  /** Optimistic concurrency version. Incremented on every write. */
+  version?: number;
 }
 
 export interface TaskFile {
