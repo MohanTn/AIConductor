@@ -11,6 +11,7 @@ import { AIConductor } from './AIConductor.js';
 import { ReviewInput, StakeholderRole } from './types.js';
 import { startDashboard } from './dashboard.js';
 import { broadcastEvent } from './broadcast.js';
+import { wsManager } from './websocket.js';
 
 // Initialize the MCP server
 const server = new Server(
@@ -1631,6 +1632,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           criteria: args.criteria as any[],
         });
 
+        // Broadcast WebSocket notification
+        if (result.success) {
+          wsManager.broadcast({
+            type: 'feature-changed',
+            action: 'criteria-added',
+            featureSlug: args.featureSlug as string,
+            repoName: args.repoName as string,
+            criteriaCount: result.criteriaAdded,
+            timestamp: Date.now(),
+          });
+        }
+
         return {
           content: [
             {
@@ -1647,6 +1660,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           featureSlug: args.featureSlug as string,
           scenarios: args.scenarios as any[],
         });
+
+        // Broadcast WebSocket notification
+        if (result.success) {
+          wsManager.broadcast({
+            type: 'feature-changed',
+            action: 'scenarios-added',
+            featureSlug: args.featureSlug as string,
+            repoName: args.repoName as string,
+            scenariosCount: result.scenariosAdded,
+            timestamp: Date.now(),
+          });
+        }
 
         return {
           content: [
@@ -1666,6 +1691,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           answer: args.answer as string | undefined,
           askedBy: (args.askedBy as 'llm' | 'user') || 'llm',
         });
+
+        // Broadcast WebSocket notification
+        if (result.success) {
+          wsManager.broadcast({
+            type: 'feature-changed',
+            action: 'clarification-added',
+            featureSlug: args.featureSlug as string,
+            repoName: args.repoName as string,
+            clarificationId: result.clarificationId,
+            timestamp: Date.now(),
+          });
+        }
 
         return {
           content: [

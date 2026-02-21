@@ -185,6 +185,39 @@ export class DatabaseHandler {
         FOREIGN KEY(feature_slug) REFERENCES features(feature_slug) ON DELETE CASCADE
       );
 
+      -- Feature-Level Acceptance Criteria table
+      CREATE TABLE IF NOT EXISTS feature_acceptance_criteria (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        repo_name TEXT NOT NULL,
+        feature_slug TEXT NOT NULL,
+        criterion_id TEXT NOT NULL,
+        criterion TEXT NOT NULL,
+        priority TEXT NOT NULL,
+        source TEXT,
+        verified INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        UNIQUE(repo_name, feature_slug, criterion_id),
+        FOREIGN KEY(feature_slug) REFERENCES features(feature_slug) ON DELETE CASCADE
+      );
+
+      -- Feature-Level Test Scenarios table
+      CREATE TABLE IF NOT EXISTS feature_test_scenarios (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        repo_name TEXT NOT NULL,
+        feature_slug TEXT NOT NULL,
+        scenario_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL,
+        priority TEXT NOT NULL,
+        type TEXT,
+        preconditions TEXT,
+        expected_result TEXT,
+        manual_only INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        UNIQUE(repo_name, feature_slug, scenario_id),
+        FOREIGN KEY(feature_slug) REFERENCES features(feature_slug) ON DELETE CASCADE
+      );
+
       -- Reviewer Presence table (T03: Presence Tracking)
       CREATE TABLE IF NOT EXISTS reviewer_presence (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -204,6 +237,8 @@ export class DatabaseHandler {
       CREATE INDEX IF NOT EXISTS idx_acceptance_criteria_task ON acceptance_criteria(feature_slug, task_id);
       CREATE INDEX IF NOT EXISTS idx_test_scenarios_task ON test_scenarios(feature_slug, task_id);
       CREATE INDEX IF NOT EXISTS idx_stakeholder_reviews_task ON stakeholder_reviews(feature_slug, task_id);
+      CREATE INDEX IF NOT EXISTS idx_feature_acceptance_criteria ON feature_acceptance_criteria(repo_name, feature_slug);
+      CREATE INDEX IF NOT EXISTS idx_feature_test_scenarios ON feature_test_scenarios(repo_name, feature_slug);
       CREATE INDEX IF NOT EXISTS idx_checkpoints_feature ON workflow_checkpoints(repo_name, feature_slug);
       CREATE INDEX IF NOT EXISTS idx_presence_reviewer ON reviewer_presence(reviewer_id);
       CREATE INDEX IF NOT EXISTS idx_presence_expiry ON reviewer_presence(expires_at);
@@ -2020,15 +2055,14 @@ echo "Starting dev workflow for {featureName}..."
 
     const result = this.db.prepare(`
       INSERT INTO feature_clarifications (
-        repo_name, feature_slug, question, answer, asked_at, answered_at, asked_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        repo_name, feature_slug, question, answer, created_at, asked_by
+      ) VALUES (?, ?, ?, ?, ?, ?)
     `).run(
       repoName,
       featureSlug,
       question,
       answer || null,
       now,
-      answer ? now : null,
       askedBy
     );
 
@@ -2042,15 +2076,14 @@ echo "Starting dev workflow for {featureName}..."
     const clarifications = this.db.prepare(`
       SELECT * FROM feature_clarifications
       WHERE repo_name = ? AND feature_slug = ?
-      ORDER BY asked_at
+      ORDER BY created_at
     `).all(repoName, featureSlug) as any[];
 
     return clarifications.map(c => ({
       id: c.id,
       question: c.question,
       answer: c.answer,
-      askedAt: c.asked_at,
-      answeredAt: c.answered_at,
+      createdAt: c.created_at,
       askedBy: c.asked_by
     }));
   }
