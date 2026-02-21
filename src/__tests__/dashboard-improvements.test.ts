@@ -11,27 +11,9 @@
  */
 
 import { WorkflowValidator } from '../WorkflowValidator.js';
-import { Task, TaskStatus } from '../types.js';
+import { TaskStatus } from '../types.js';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-
-// ── Helpers ───────────────────────────────────────────────────
-function makeTask(overrides: Partial<Task>): Task {
-  return {
-    taskId: 'T01',
-    featureSlug: 'test-feature',
-    title: 'Test Task',
-    description: '',
-    status: 'PendingProductDirector',
-    orderOfExecution: 1,
-    transitions: [],
-    acceptanceCriteria: [],
-    testScenarios: [],
-    tags: [],
-    version: 1,
-    ...overrides,
-  };
-}
 
 // ── T01: Phase-grouped swimlane board ─────────────────────────
 describe('T01 — Swimlane phase grouping', () => {
