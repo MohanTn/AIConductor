@@ -424,6 +424,16 @@
   flex-shrink: 0;
 }
 
+.additions {
+  color: #86efac;
+  font-weight: 600;
+}
+
+.deletions {
+  color: #f87171;
+  font-weight: 600;
+}
+
 /* Loading / Error states */
 .loadingState {
   display: flex;

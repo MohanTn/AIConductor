@@ -31,6 +31,12 @@ export type PipelineRole =
   | 'codeReviewer'
   | 'qa';
 
+export interface FileChangeRecord {
+  filePath: string;
+  addedLines: number;
+  removedLines: number;
+}
+
 export type PipelinePhase = 'review' | 'execution';
 
 export interface Transition {
@@ -63,8 +69,10 @@ export interface Transition {
   mandatoryControls?: string;
   // Developer
   developerNotes?: string;
-  filesChanged?: string[];
+  filesChanged?: string[] | FileChangeRecord[]; // Support both array of strings (legacy) and structured records
   testFiles?: string[];
+  docsUpdated?: string[]; // Documentation files that were updated
+  documentationNotes?: string; // Explanation of what docs were updated and why, or why no updates were needed
   // Code Reviewer
   codeReviewerNotes?: string;
   testResultsSummary?: string;

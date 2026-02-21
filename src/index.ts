@@ -8,9 +8,10 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import { AIConductor } from './AIConductor.js';
-import { ReviewInput, StakeholderRole } from './types.js';
+import { ReviewInput } from './types.js';
 import { startDashboard } from './dashboard.js';
 import { broadcastEvent } from './broadcast.js';
+import { wsManager } from './websocket.js';
 
 // Initialize the MCP server
 const server = new Server(
@@ -27,6 +28,57 @@ const server = new Server(
 
 // Initialize AIConductor
 const reviewManager = new AIConductor();
+
+// ─── Input Validation Helpers ────────────────────────────────────────────────
+// Type-safe argument extraction that throws clear errors instead of silently
+// passing undefined/null through the system via unsafe `as string` casts.
+
+function requireString(args: Record<string, unknown>, field: string): string {
+  const val = args[field];
+  if (typeof val !== 'string' || val.trim() === '') {
+    throw new Error(`Missing or invalid required field: '${field}' (expected non-empty string, got ${typeof val})`);
+  }
+  return val.trim();
+}
+
+function optionalString(args: Record<string, unknown>, field: string): string | undefined {
+  const val = args[field];
+  if (val === undefined || val === null) return undefined;
+  if (typeof val !== 'string') {
+    throw new Error(`Invalid field '${field}': expected string, got ${typeof val}`);
+  }
+  return val.trim() || undefined;
+}
+
+function requireEnum<T extends string>(args: Record<string, unknown>, field: string, allowed: readonly T[]): T {
+  const val = requireString(args, field);
+  if (!allowed.includes(val as T)) {
+    throw new Error(`Invalid value for '${field}': '${val}'. Allowed: ${allowed.join(', ')}`);
+  }
+  return val as T;
+}
+
+function optionalNumber(args: Record<string, unknown>, field: string): number | undefined {
+  const val = args[field];
+  if (val === undefined || val === null) return undefined;
+  if (typeof val !== 'number') {
+    throw new Error(`Invalid field '${field}': expected number, got ${typeof val}`);
+  }
+  return val;
+}
+
+/**
+ * Standardized MCP result wrapper. Checks `success` field on results that
+ * use the return-success-false pattern and sets isError accordingly, so MCP
+ * clients see a proper error indication.
+ */
+function wrapResult(result: unknown): { content: Array<{ type: 'text'; text: string }>; isError?: boolean } {
+  const isErrorResult = result && typeof result === 'object' && 'success' in result && (result as any).success === false;
+  return {
+    content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+    ...(isErrorResult ? { isError: true } : {}),
+  };
+}
 
 // Tool definitions
 const TOOLS = [
@@ -219,6 +271,8 @@ const TOOLS = [
             developerNotes: { type: 'string' },
             filesChanged: { type: 'array', items: { type: 'string' } },
             testFiles: { type: 'array', items: { type: 'string' } },
+            docsUpdated: { type: 'array', items: { type: 'string' }, description: 'Documentation files that were updated' },
+            documentationNotes: { type: 'string', description: 'Explanation of what documentation was updated and why' },
             codeReviewerNotes: { type: 'string' },
             testResultsSummary: { type: 'string' },
             codeQualityConcerns: { type: 'string' },
@@ -1136,29 +1190,25 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     switch (name) {
       case 'get_next_step': {
         const result = await reviewManager.getNextStep({
-          repoName: args.repoName as string,
-          featureSlug: args.featureSlug as string,
-          taskId: args.taskId as string,
+          repoName: requireString(args, 'repoName'),
+          featureSlug: requireString(args, 'featureSlug'),
+          taskId: requireString(args, 'taskId'),
         });
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        return wrapResult(result);
       }
 
       case 'add_stakeholder_review': {
+        const STAKEHOLDER_ROLES = ['productDirector', 'architect', 'uiUxExpert', 'securityOfficer'] as const;
+        const DECISIONS = ['approve', 'reject'] as const;
+
         const input: ReviewInput = {
-          repoName: args.repoName as string,
-          featureSlug: args.featureSlug as string,
-          taskId: args.taskId as string,
-          stakeholder: args.stakeholder as StakeholderRole,
-          decision: args.decision as 'approve' | 'reject',
-          notes: args.notes as string,
+          repoName: requireString(args, 'repoName'),
+          featureSlug: requireString(args, 'featureSlug'),
+          taskId: requireString(args, 'taskId'),
+          stakeholder: requireEnum(args, 'stakeholder', STAKEHOLDER_ROLES),
+          decision: requireEnum(args, 'decision', DECISIONS),
+          notes: requireString(args, 'notes'),
           additionalFields: args.additionalFields as any,
         };
 
@@ -1177,76 +1227,48 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           timestamp: Date.now(),
         }).catch(() => {});
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        return wrapResult(result);
       }
 
       case 'get_task_status': {
         const result = await reviewManager.getTaskStatus(
-          args.repoName as string,
-          args.featureSlug as string,
-          args.taskId as string
+          requireString(args, 'repoName'),
+          requireString(args, 'featureSlug'),
+          requireString(args, 'taskId')
         );
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        return wrapResult(result);
       }
 
       case 'get_review_summary': {
         const result = await reviewManager.getReviewSummary(
-          args.repoName as string,
-          args.featureSlug as string
+          requireString(args, 'repoName'),
+          requireString(args, 'featureSlug')
         );
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        return wrapResult(result);
       }
 
       case 'validate_workflow': {
         const result = await reviewManager.validateWorkflow(
-          args.repoName as string,
-          args.featureSlug as string,
-          args.taskId as string,
-          args.stakeholder as StakeholderRole
+          requireString(args, 'repoName'),
+          requireString(args, 'featureSlug'),
+          requireString(args, 'taskId'),
+          requireEnum(args, 'stakeholder', ['productDirector', 'architect', 'uiUxExpert', 'securityOfficer'] as const)
         );
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        return wrapResult(result);
       }
 
       case 'transition_task_status': {
         const input = {
-          repoName: args.repoName as string,
-          featureSlug: args.featureSlug as string,
-          taskId: args.taskId as string,
-          fromStatus: args.fromStatus as any,
-          toStatus: args.toStatus as any,
-          actor: args.actor as any,
-          notes: args.notes as string | undefined,
+          repoName: requireString(args, 'repoName'),
+          featureSlug: requireString(args, 'featureSlug'),
+          taskId: requireString(args, 'taskId'),
+          fromStatus: requireString(args, 'fromStatus') as any,
+          toStatus: requireString(args, 'toStatus') as any,
+          actor: requireString(args, 'actor') as any,
+          notes: optionalString(args, 'notes'),
           metadata: args.metadata as any,
         };
 
@@ -1265,159 +1287,110 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           timestamp: Date.now(),
         }).catch(() => {});
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        return wrapResult(result);
       }
 
       case 'get_next_task': {
         const input = {
-          repoName: args.repoName as string,
-          featureSlug: args.featureSlug as string,
+          repoName: requireString(args, 'repoName'),
+          featureSlug: requireString(args, 'featureSlug'),
           statusFilter: args.statusFilter as any[],
         };
 
         const result = await reviewManager.getNextTask(input);
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        return wrapResult(result);
       }
 
       case 'update_acceptance_criteria': {
         const input = {
-          repoName: args.repoName as string,
-          featureSlug: args.featureSlug as string,
-          taskId: args.taskId as string,
-          criterionId: args.criterionId as string,
+          repoName: requireString(args, 'repoName'),
+          featureSlug: requireString(args, 'featureSlug'),
+          taskId: requireString(args, 'taskId'),
+          criterionId: requireString(args, 'criterionId'),
           verified: args.verified as boolean,
         };
 
         const result = await reviewManager.updateAcceptanceCriteria(input);
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        return wrapResult(result);
       }
 
       case 'get_tasks_by_status': {
         const input = {
-          repoName: args.repoName as string,
-          featureSlug: args.featureSlug as string,
-          status: args.status as any,
+          repoName: requireString(args, 'repoName'),
+          featureSlug: requireString(args, 'featureSlug'),
+          status: requireString(args, 'status') as any,
         };
 
         const result = await reviewManager.getTasksByStatus(input);
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        return wrapResult(result);
       }
 
       case 'verify_all_tasks_complete': {
         const input = {
-          repoName: args.repoName as string,
-          featureSlug: args.featureSlug as string,
+          repoName: requireString(args, 'repoName'),
+          featureSlug: requireString(args, 'featureSlug'),
         };
 
         const result = await reviewManager.verifyAllTasksComplete(input);
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        return wrapResult(result);
       }
 
       case 'create_feature': {
         const result = await reviewManager.createFeature({
-          repoName: args.repoName as string,
-          featureSlug: args.featureSlug as string,
-          featureName: args.featureName as string,
-          description: args.description as string | undefined,
+          repoName: requireString(args, 'repoName'),
+          featureSlug: requireString(args, 'featureSlug'),
+          featureName: requireString(args, 'featureName'),
+          description: optionalString(args, 'description'),
         });
 
         // Notify dashboard WebSocket clients
         broadcastEvent({
           type: 'feature-changed',
           action: 'created',
-          repoName: args.repoName as string || 'default',
+          repoName: (args.repoName as string) || 'default',
           featureSlug: args.featureSlug as string,
           timestamp: Date.now(),
         }).catch(() => {});
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        return wrapResult(result);
       }
 
       case 'update_feature': {
         const result = await reviewManager.updateFeature({
-          repoName: args.repoName as string,
-          featureSlug: args.featureSlug as string,
-          featureName: args.featureName as string | undefined,
-          description: args.description as string | undefined,
+          repoName: requireString(args, 'repoName'),
+          featureSlug: requireString(args, 'featureSlug'),
+          featureName: optionalString(args, 'featureName'),
+          description: optionalString(args, 'description'),
         });
 
         // Notify dashboard WebSocket clients
         broadcastEvent({
           type: 'feature-changed',
           action: 'updated',
-          repoName: args.repoName as string || 'default',
+          repoName: (args.repoName as string) || 'default',
           featureSlug: args.featureSlug as string,
           timestamp: Date.now(),
         }).catch(() => {});
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        return wrapResult(result);
       }
 
       case 'add_task': {
         const result = await reviewManager.addTask({
-          repoName: args.repoName as string,
-          featureSlug: args.featureSlug as string,
-          taskId: args.taskId as string,
-          title: args.title as string,
-          description: args.description as string,
+          repoName: requireString(args, 'repoName'),
+          featureSlug: requireString(args, 'featureSlug'),
+          taskId: requireString(args, 'taskId'),
+          title: requireString(args, 'title'),
+          description: requireString(args, 'description'),
           orderOfExecution: args.orderOfExecution as number,
           acceptanceCriteria: args.acceptanceCriteria as any,
           testScenarios: args.testScenarios as any,
           outOfScope: args.outOfScope as string[],
-          estimatedHours: args.estimatedHours as number | undefined,
+          estimatedHours: optionalNumber(args, 'estimatedHours'),
           dependencies: args.dependencies as string[],
           tags: args.tags as string[],
         });
@@ -1426,81 +1399,52 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         broadcastEvent({
           type: 'feature-changed',
           action: 'task-added',
-          repoName: args.repoName as string || 'default',
+          repoName: (args.repoName as string) || 'default',
           featureSlug: args.featureSlug as string,
           taskId: args.taskId as string,
           timestamp: Date.now(),
         }).catch(() => {});
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        return wrapResult(result);
       }
 
       case 'list_features': {
-        const result = await reviewManager.listFeatures(args.repoName as string);
+        const result = await reviewManager.listFeatures(requireString(args, 'repoName'));
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        return wrapResult(result);
       }
 
       case 'delete_feature': {
-        const result = await reviewManager.deleteFeature(
-          args.repoName as string,
-          args.featureSlug as string
-        );
+        const repoName = requireString(args, 'repoName');
+        const featureSlug = requireString(args, 'featureSlug');
+        const result = await reviewManager.deleteFeature(repoName, featureSlug);
 
         // Notify dashboard WebSocket clients
         broadcastEvent({
           type: 'feature-changed',
           action: 'deleted',
-          repoName: args.repoName as string || 'default',
-          featureSlug: args.featureSlug as string,
+          repoName: repoName || 'default',
+          featureSlug,
           timestamp: Date.now(),
         }).catch(() => {});
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        return wrapResult(result);
       }
 
       case 'get_feature': {
         const result = await reviewManager.getFeature(
-          args.repoName as string,
-          args.featureSlug as string
+          requireString(args, 'repoName'),
+          requireString(args, 'featureSlug')
         );
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        return wrapResult(result);
       }
 
       case 'update_task': {
         const result = await reviewManager.updateTask({
-          repoName: args.repoName as string,
-          featureSlug: args.featureSlug as string,
-          taskId: args.taskId as string,
+          repoName: requireString(args, 'repoName'),
+          featureSlug: requireString(args, 'featureSlug'),
+          taskId: requireString(args, 'taskId'),
           updates: args.updates as any,
         });
 
@@ -1508,55 +1452,41 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         broadcastEvent({
           type: 'feature-changed',
           action: 'task-updated',
-          repoName: args.repoName as string || 'default',
+          repoName: (args.repoName as string) || 'default',
           featureSlug: args.featureSlug as string,
           taskId: args.taskId as string,
           timestamp: Date.now(),
         }).catch(() => {});
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        return wrapResult(result);
       }
 
       case 'delete_task': {
-        const result = await reviewManager.deleteTask(
-          args.repoName as string,
-          args.featureSlug as string,
-          args.taskId as string
-        );
+        const repoName = requireString(args, 'repoName');
+        const featureSlug = requireString(args, 'featureSlug');
+        const taskId = requireString(args, 'taskId');
+        const result = await reviewManager.deleteTask(repoName, featureSlug, taskId);
 
         // Notify dashboard WebSocket clients
         broadcastEvent({
           type: 'feature-changed',
           action: 'task-deleted',
-          repoName: args.repoName as string || 'default',
-          featureSlug: args.featureSlug as string,
-          taskId: args.taskId as string,
+          repoName: repoName || 'default',
+          featureSlug,
+          taskId,
           timestamp: Date.now(),
         }).catch(() => {});
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        return wrapResult(result);
       }
 
       case 'register_repo': {
+        const repoName = requireString(args, 'repoName');
         const result = await reviewManager.registerRepo({
-          repoName: args.repoName as string,
-          repoPath: args.repoPath as string,
-          repoUrl: args.repoUrl as string | undefined,
-          defaultBranch: args.defaultBranch as string | undefined,
+          repoName,
+          repoPath: requireString(args, 'repoPath'),
+          repoUrl: optionalString(args, 'repoUrl'),
+          defaultBranch: optionalString(args, 'defaultBranch'),
           metadata: args.metadata as Record<string, any> | undefined,
         });
 
@@ -1564,201 +1494,166 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         broadcastEvent({
           type: 'repo-changed',
           action: 'created',
-          repoName: args.repoName as string,
+          repoName,
           timestamp: Date.now(),
         }).catch(() => {});
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        return wrapResult(result);
       }
 
       case 'list_repos': {
         const result = await reviewManager.listRepos();
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        return wrapResult(result);
       }
 
       case 'get_current_repo': {
         const result = await reviewManager.getCurrentRepo();
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        return wrapResult(result);
       }
 
       case 'update_refinement_step': {
         const result = await reviewManager.updateRefinementStep({
-          repoName: args.repoName as string,
-          featureSlug: args.featureSlug as string,
+          repoName: requireString(args, 'repoName'),
+          featureSlug: requireString(args, 'featureSlug'),
           stepNumber: args.stepNumber as number,
           completed: args.completed as boolean,
           summary: args.summary as string,
           data: args.data as Record<string, any> | undefined,
         });
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        return wrapResult(result);
       }
 
       case 'add_feature_acceptance_criteria': {
+        const repoName = requireString(args, 'repoName');
+        const featureSlug = requireString(args, 'featureSlug');
         const result = await reviewManager.addFeatureAcceptanceCriteria({
-          repoName: args.repoName as string,
-          featureSlug: args.featureSlug as string,
+          repoName,
+          featureSlug,
           criteria: args.criteria as any[],
         });
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        // Broadcast WebSocket notification
+        if (result.success) {
+          wsManager.broadcast({
+            type: 'feature-changed',
+            action: 'criteria-added',
+            featureSlug,
+            repoName,
+            criteriaCount: result.criteriaAdded,
+            timestamp: Date.now(),
+          });
+        }
+
+        return wrapResult(result);
       }
 
       case 'add_feature_test_scenarios': {
+        const repoName = requireString(args, 'repoName');
+        const featureSlug = requireString(args, 'featureSlug');
         const result = await reviewManager.addFeatureTestScenarios({
-          repoName: args.repoName as string,
-          featureSlug: args.featureSlug as string,
+          repoName,
+          featureSlug,
           scenarios: args.scenarios as any[],
         });
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        // Broadcast WebSocket notification
+        if (result.success) {
+          wsManager.broadcast({
+            type: 'feature-changed',
+            action: 'scenarios-added',
+            featureSlug,
+            repoName,
+            scenariosCount: result.scenariosAdded,
+            timestamp: Date.now(),
+          });
+        }
+
+        return wrapResult(result);
       }
 
       case 'add_clarification': {
+        const repoName = requireString(args, 'repoName');
+        const featureSlug = requireString(args, 'featureSlug');
         const result = await reviewManager.addClarification({
-          repoName: args.repoName as string,
-          featureSlug: args.featureSlug as string,
-          question: args.question as string,
-          answer: args.answer as string | undefined,
+          repoName,
+          featureSlug,
+          question: requireString(args, 'question'),
+          answer: optionalString(args, 'answer'),
           askedBy: (args.askedBy as 'llm' | 'user') || 'llm',
         });
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        // Broadcast WebSocket notification
+        if (result.success) {
+          wsManager.broadcast({
+            type: 'feature-changed',
+            action: 'clarification-added',
+            featureSlug,
+            repoName,
+            clarificationId: result.clarificationId,
+            timestamp: Date.now(),
+          });
+        }
+
+        return wrapResult(result);
       }
 
       case 'add_attachment_analysis': {
         const result = await reviewManager.addAttachmentAnalysis({
-          repoName: args.repoName as string,
-          featureSlug: args.featureSlug as string,
-          attachmentName: args.attachmentName as string,
-          attachmentType: args.attachmentType as 'excel' | 'image' | 'document' | 'design',
-          analysisSummary: args.analysisSummary as string,
-          filePath: args.filePath as string | undefined,
-          fileUrl: args.fileUrl as string | undefined,
+          repoName: requireString(args, 'repoName'),
+          featureSlug: requireString(args, 'featureSlug'),
+          attachmentName: requireString(args, 'attachmentName'),
+          attachmentType: requireEnum(args, 'attachmentType', ['excel', 'image', 'document', 'design'] as const),
+          analysisSummary: requireString(args, 'analysisSummary'),
+          filePath: optionalString(args, 'filePath'),
+          fileUrl: optionalString(args, 'fileUrl'),
           extractedData: args.extractedData as Record<string, any> | undefined,
         });
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        return wrapResult(result);
       }
 
       case 'get_refinement_status': {
         const result = await reviewManager.getRefinementStatus({
-          repoName: args.repoName as string,
-          featureSlug: args.featureSlug as string,
+          repoName: requireString(args, 'repoName'),
+          featureSlug: requireString(args, 'featureSlug'),
         });
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        return wrapResult(result);
       }
 
       case 'generate_refinement_report': {
         const result = await reviewManager.generateRefinementReport({
-          repoName: args.repoName as string,
-          featureSlug: args.featureSlug as string,
+          repoName: requireString(args, 'repoName'),
+          featureSlug: requireString(args, 'featureSlug'),
           format: (args.format as 'markdown' | 'html' | 'json') || 'markdown',
-          outputPath: args.outputPath as string | undefined,
+          outputPath: optionalString(args, 'outputPath'),
           includeSections: args.includeSections as string[] | undefined,
         });
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        return wrapResult(result);
       }
 
       case 'get_workflow_snapshot': {
         const result = await reviewManager.getWorkflowSnapshot(
-          args.repoName as string,
-          args.featureSlug as string
+          requireString(args, 'repoName'),
+          requireString(args, 'featureSlug')
         );
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        return wrapResult(result);
       }
 
       case 'batch_transition_tasks': {
         const batchInput = {
-          repoName: args.repoName as string,
-          featureSlug: args.featureSlug as string,
+          repoName: requireString(args, 'repoName'),
+          featureSlug: requireString(args, 'featureSlug'),
           taskIds: args.taskIds as string[],
-          fromStatus: args.fromStatus as any,
-          toStatus: args.toStatus as any,
-          actor: args.actor as any,
-          notes: args.notes as string | undefined,
+          fromStatus: requireString(args, 'fromStatus') as any,
+          toStatus: requireString(args, 'toStatus') as any,
+          actor: requireString(args, 'actor') as any,
+          notes: optionalString(args, 'notes'),
           metadata: args.metadata as any,
         };
         const result = await reviewManager.batchTransitionTasks(batchInput);
@@ -1778,166 +1673,97 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           }).catch(() => {});
         }
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        return wrapResult(result);
       }
 
       case 'batch_update_acceptance_criteria': {
         const result = await reviewManager.batchUpdateAcceptanceCriteria({
-          repoName: args.repoName as string,
-          featureSlug: args.featureSlug as string,
+          repoName: requireString(args, 'repoName'),
+          featureSlug: requireString(args, 'featureSlug'),
           updates: args.updates as any,
         });
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        return wrapResult(result);
       }
 
       case 'save_workflow_checkpoint': {
         const result = await reviewManager.saveWorkflowCheckpoint({
-          repoName: args.repoName as string,
-          featureSlug: args.featureSlug as string,
-          description: args.description as string,
+          repoName: requireString(args, 'repoName'),
+          featureSlug: requireString(args, 'featureSlug'),
+          description: requireString(args, 'description'),
         });
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        return wrapResult(result);
       }
 
       case 'list_workflow_checkpoints': {
         const result = await reviewManager.listWorkflowCheckpoints({
-          repoName: args.repoName as string,
-          featureSlug: args.featureSlug as string,
+          repoName: requireString(args, 'repoName'),
+          featureSlug: requireString(args, 'featureSlug'),
         });
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        return wrapResult(result);
       }
 
       case 'restore_workflow_checkpoint': {
         const result = await reviewManager.restoreWorkflowCheckpoint({
-          repoName: args.repoName as string,
-          featureSlug: args.featureSlug as string,
+          repoName: requireString(args, 'repoName'),
+          featureSlug: requireString(args, 'featureSlug'),
           checkpointId: args.checkpointId as number,
         });
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        return wrapResult(result);
       }
 
       case 'rollback_last_decision': {
         const result = await reviewManager.rollbackLastDecision({
-          repoName: args.repoName as string,
-          featureSlug: args.featureSlug as string,
-          taskId: args.taskId as string,
+          repoName: requireString(args, 'repoName'),
+          featureSlug: requireString(args, 'featureSlug'),
+          taskId: requireString(args, 'taskId'),
         });
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        return wrapResult(result);
       }
 
       case 'get_task_execution_plan': {
         const result = await reviewManager.getTaskExecutionPlan({
-          repoName: args.repoName as string,
-          featureSlug: args.featureSlug as string,
+          repoName: requireString(args, 'repoName'),
+          featureSlug: requireString(args, 'featureSlug'),
         });
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        return wrapResult(result);
       }
 
       case 'get_workflow_metrics': {
         const result = await reviewManager.getWorkflowMetrics({
-          repoName: args.repoName as string,
-          featureSlug: args.featureSlug as string,
+          repoName: requireString(args, 'repoName'),
+          featureSlug: requireString(args, 'featureSlug'),
         });
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        return wrapResult(result);
       }
 
       case 'validate_review_completeness': {
+        const STAKEHOLDER_ROLES = ['productDirector', 'architect', 'uiUxExpert', 'securityOfficer'] as const;
         const result = await reviewManager.validateReviewCompleteness({
-          repoName: args.repoName as string,
-          featureSlug: args.featureSlug as string,
-          taskId: args.taskId as string,
-          stakeholder: args.stakeholder as any,
+          repoName: requireString(args, 'repoName'),
+          featureSlug: requireString(args, 'featureSlug'),
+          taskId: requireString(args, 'taskId'),
+          stakeholder: requireEnum(args, 'stakeholder', STAKEHOLDER_ROLES),
         });
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        return wrapResult(result);
       }
 
       case 'get_similar_tasks': {
         const result = await reviewManager.getSimilarTasks({
-          repoName: args.repoName as string,
-          featureSlug: args.featureSlug as string,
-          taskId: args.taskId as string,
-          limit: args.limit as number | undefined,
+          repoName: requireString(args, 'repoName'),
+          featureSlug: requireString(args, 'featureSlug'),
+          taskId: requireString(args, 'taskId'),
+          limit: optionalNumber(args, 'limit'),
         });
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        return wrapResult(result);
       }
 
       default:

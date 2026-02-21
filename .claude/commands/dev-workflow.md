@@ -70,11 +70,18 @@ No file must be created for this workflow. All outputs should be returned in the
 - Once ALL tasks implemented:
   - **[BUILD VERIFICATION]** Run the appropriate build command for the project's language and toolchain (e.g., `npm run build`, `mvn package`, `cargo build`, `go build`, `python -m py_compile`, etc.) — confirm it succeeds with zero errors before proceeding
   - **[APP VERIFICATION]** Start the application using the appropriate run command for the project (e.g., `npm start`, `java -jar app.jar`, `./target/app`, `go run main.go`, `python app.py`, etc.) and confirm it starts and runs correctly without runtime errors; stop the process after confirming it is healthy
+  - **[DOCUMENTATION VERIFICATION]** Search the repository for documentation files (README.md, CLAUDE.md, docs/, *.md, API docs, configuration examples, etc.). For each documentation file, verify that any references to code you changed are still accurate. Update any outdated content including:
+    - File paths, class names, method signatures, interfaces
+    - New or removed features, commands, or configuration options
+    - Changed architecture, data flow, or directory structure
+    - Updated environment variables, ports, or deployment instructions
+    - New or removed dependencies
+    - If no documentation updates are needed, explicitly note "No documentation updates required" with a brief justification
   - **[NEW - Rec 2]** Call `mcp__aiconductor__batch_transition_tasks` to move ALL from InProgress → InReview in one call:
     - `taskIds`: All implemented task IDs
     - `fromStatus`: "InProgress"
     - `toStatus`: "InReview"
-    - `metadata`: Shared developer notes (or leave per-task for detail)
+    - `metadata`: Shared developer notes, docsUpdated (array of doc files updated), and documentationNotes (explanation of changes or why none needed)
   - **[NEW - Rec 3]** Call `mcp__aiconductor__save_workflow_checkpoint` with description "After developer batch - all tasks in InReview"
 - **Progress output**: "Developer batch complete: [N] tasks implemented and moved to InReview"
 - Commit all changes with message: `feature/<feature_slug>: implement all tasks`
@@ -91,6 +98,7 @@ No file must be created for this workflow. All outputs should be returned in the
     - Architect recommendations (design patterns, technology choices)
     - Security requirements (Security Officer notes)
     - Code quality standards (clean code, documentation)
+  - **Verify documentation updates**: Check the docsUpdated and documentationNotes fields from the developer. If code changes affect documented behavior, APIs, configuration, or architecture, confirm documentation has been updated accordingly. Flag missing documentation updates as a rejection reason.
   - Prepare review notes
 - Once ALL reviews completed:
   - **[NEW - Rec 2]** Call `mcp__aiconductor__batch_transition_tasks` for APPROVED tasks from InReview → InQA:
