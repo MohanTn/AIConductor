@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import ReactDOM from 'react-dom';
 import { Task, Transition, AcceptanceCriterion, TestScenario } from '../types';
 import { formatStatus, getBadgeClass } from '../utils/badge-utils';
-import { getFilesChanged } from '../utils/transition-utils';
+import { getFilesChanged, formatFileChange, calculateChangesSummary } from '../utils/transition-utils';
 import styles from './TaskDetailModal.module.css';
 
 interface TaskDetailModalProps {
@@ -255,11 +255,12 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task, loading, error,
                             {t.notes && (
                               <div className={styles.timelineNotes}>{t.notes}</div>
                             )}
-                            {/* T03: Expandable Files Changed list */}
+                            {/* Code Changes Section - collapsible with summary */}
                             {(() => {
                               const files = getFilesChanged(t.additionalData);
                               if (files.length === 0) return null;
                               const isOpen = expandedFiles.has(idx);
+                              const summary = calculateChangesSummary(files);
                               return (
                                 <div className={styles.filesChanged}>
                                   <button
@@ -271,7 +272,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task, loading, error,
                                     <span className={styles.filesToggleIcon}>
                                       {isOpen ? '▾' : '▸'}
                                     </span>
-                                    {files.length} file{files.length !== 1 ? 's' : ''} changed
+                                    {summary.totalFiles} file{summary.totalFiles !== 1 ? 's' : ''} changed, <span className={styles.additions}>+{summary.totalAdditions}</span> <span className={styles.deletions}>-{summary.totalDeletions}</span>
                                   </button>
                                   {isOpen && (
                                     <ul
@@ -281,7 +282,7 @@ const TaskDetailModal: React.FC<TaskDetailModalProps> = ({ task, loading, error,
                                     >
                                       {files.map((file, fi) => (
                                         <li key={fi} className={styles.fileItem}>
-                                          {file}
+                                          {formatFileChange(file)}
                                         </li>
                                       ))}
                                     </ul>
