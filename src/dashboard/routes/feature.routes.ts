@@ -40,6 +40,46 @@ export function createFeatureRoutes(reviewManager: AIConductor): Router {
   }));
 
   /**
+   * GET /api/features/:featureSlug/snapshot?repoName=<repo>
+   * Compressed workflow snapshot: blocked tasks, next role, high-rework items, recommendations.
+   * Used by the WhatNextBanner component in the dashboard.
+   * MUST come before the wildcard :featureSlug route.
+   */
+  router.get('/features/:featureSlug/snapshot', asyncHandler(async (req: Request, res: Response) => {
+    const featureSlug = req.params.featureSlug as string;
+    const repoName = (req.query.repoName as string) || 'default';
+
+    // Allowlist validation to prevent path traversal / SQL injection (Security Officer AC)
+    const slugPattern = /^[a-zA-Z0-9_-]+$/;
+    if (!slugPattern.test(featureSlug) || !slugPattern.test(repoName)) {
+      throw new ValidationError('Invalid characters in feature slug or repo name');
+    }
+
+    const result = await reviewManager.getWorkflowSnapshot(repoName, featureSlug);
+
+    if (!result.success) {
+      throw new NotFoundError(`Feature '${featureSlug}' not found in repo '${repoName}'`);
+    }
+
+    // Map statuses to human-readable role labels (UX Expert requirement)
+    const statusToRoleLabel: Record<string, string> = {
+      PendingProductDirector: 'Product Director',
+      PendingArchitect: 'Architect',
+      PendingUiUxExpert: 'UI/UX Expert',
+      PendingSecurityOfficer: 'Security Officer',
+      InReview: 'Code Reviewer',
+      InQA: 'QA Engineer',
+    };
+
+    const enrichedBlockages = (result.blockages || []).map((b: any) => ({
+      ...b,
+      roleLabel: statusToRoleLabel[b.status] ?? b.status,
+    }));
+
+    res.json({ ...result, blockages: enrichedBlockages });
+  }));
+
+  /**
    * GET /api/features/:featureSlug/details?repoName=<repo>
    * Get feature details including AC, test scenarios, refinement steps, clarifications
    * MUST come before the wildcard :featureSlug route

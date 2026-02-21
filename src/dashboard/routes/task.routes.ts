@@ -140,6 +140,49 @@ export function createTaskRoutes(reviewManager: AIConductor): Router {
   }));
 
   /**
+   * POST /api/tasks/:taskId/transition
+   * Transition a task status — used by the inline quick-action buttons on task cards.
+   * Security: 'system' actor is rejected from client requests per Security Officer review.
+   */
+  router.post('/tasks/:taskId/transition', asyncHandler(async (req: Request, res: Response) => {
+    const taskId = req.params.taskId as string;
+    const { featureSlug, repoName, fromStatus, toStatus, actor } = req.body;
+
+    if (!featureSlug || !toStatus || !fromStatus) {
+      throw new ValidationError('featureSlug, fromStatus, and toStatus are required');
+    }
+
+    // Reject privileged actor values from client-originated requests
+    const allowedClientActors = ['developer', 'codeReviewer', 'qa'];
+    const resolvedActor = allowedClientActors.includes(actor) ? actor : 'developer';
+
+    const result = await reviewManager.transitionTaskStatus({
+      repoName: repoName || 'default',
+      featureSlug,
+      taskId,
+      fromStatus,
+      toStatus,
+      actor: resolvedActor,
+    });
+
+    if (result.success) {
+      wsManager.broadcast({
+        type: 'task-status-changed',
+        action: 'transitioned',
+        featureSlug,
+        taskId,
+        repoName: repoName || 'default',
+        newStatus: toStatus,
+        timestamp: Date.now(),
+      });
+      res.json(result);
+    } else {
+      // Return generic error — do not expose internal details (Security Officer AC)
+      res.status(400).json({ success: false, message: 'Transition failed' });
+    }
+  }));
+
+  /**
    * GET /api/tasks/by-status?featureSlug=<slug>&status=<status>&repoName=<repo>
    * Get tasks filtered by status
    */

@@ -1,10 +1,83 @@
 .boardContainer {
   flex: 1;
-  overflow: hidden;
+  overflow-y: auto;
   background: var(--bg);
   padding: 12px;
   display: flex;
   flex-direction: column;
+  gap: 4px;
+}
+
+/* ── Swimlane ─────────────────────────────────────────────── */
+.swimlane {
+  display: flex;
+  flex-direction: column;
+}
+
+.swimlaneHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: none;
+  border: none;
+  border-bottom: 2px solid var(--border-light);
+  padding: 6px 4px;
+  cursor: pointer;
+  text-align: left;
+  color: var(--text);
+  transition: background 0.1s;
+}
+
+.swimlaneHeader:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.swimlaneHeader:focus-visible {
+  outline: 2px solid var(--primary, #2196f3);
+  outline-offset: 2px;
+}
+
+.swimlaneChevron {
+  font-size: 14px;
+  color: var(--text-secondary);
+  transition: transform 0.2s ease;
+  display: inline-block;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.swimlaneChevronCollapsed {
+  transform: rotate(-90deg);
+}
+
+.swimlaneLabel {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  flex: 1;
+}
+
+.swimlaneCount {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: rgba(0, 0, 0, 0.05);
+  padding: 2px 8px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.swimlaneBody {
+  overflow: hidden;
+  max-height: 4000px;
+  transition: max-height 0.2s ease;
+}
+
+.swimlaneBodyCollapsed {
+  max-height: 0;
 }
 
 .board {

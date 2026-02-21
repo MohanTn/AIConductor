@@ -39,6 +39,10 @@ export class APIClient {
     return FeatureAPI.getFeatureDetails(repoName, featureSlug);
   }
 
+  static async getFeatureSnapshot(repoName: string, featureSlug: string): Promise<any> {
+    return FeatureAPI.getFeatureSnapshot(repoName, featureSlug);
+  }
+
   static async createFeature(data: {
     repoName: string;
     featureSlug: string;
@@ -95,6 +99,17 @@ export class APIClient {
     status: string
   ): Promise<any> {
     return TaskAPI.getTasksByStatus(repoName, featureSlug, status);
+  }
+
+  static async transitionTask(
+    repoName: string,
+    featureSlug: string,
+    taskId: string,
+    fromStatus: string,
+    toStatus: string,
+    actor?: string,
+  ): Promise<any> {
+    return TaskAPI.transitionTask(repoName, featureSlug, taskId, fromStatus, toStatus, actor);
   }
 
   // Settings / Role Prompts
