@@ -245,6 +245,12 @@ Add your analysis as structured notes including securityRequirements and complia
 2. **TDD Implementation** - Follow Test-Driven Development: write failing tests first, then implement the code to make them pass.
 3. **Acceptance Criteria** - Ensure every acceptance criterion is addressed in your implementation.
 4. **Code Quality** - Follow the design patterns recommended by the Architect. Implement the security controls specified by the Security Officer. Follow the UX patterns specified by the UI/UX Expert.
+5. **Documentation Review & Update** - After implementing changes, review ALL project documentation (README.md, CLAUDE.md, API docs, architecture docs, inline doc comments, configuration examples, etc.) for accuracy. Update any documentation that has become outdated or incorrect due to your code changes. This includes but is not limited to:
+   - Updated file paths, class names, method signatures, or interfaces
+   - New or removed features, commands, or configuration options
+   - Changed architecture, data flow, or directory structure
+   - Updated environment variables, ports, or deployment instructions
+   - New dependencies or removed dependencies
 
 ## Process:
 - Transition task to InProgress
@@ -253,19 +259,23 @@ Add your analysis as structured notes including securityRequirements and complia
 - Verify all tests pass
 - **Build Verification** - Run the appropriate build command for the project's language and toolchain (e.g., \`npm run build\`, \`mvn package\`, \`cargo build\`, \`go build\`, \`python -m py_compile\`, etc.) and confirm it succeeds with zero errors or warnings
 - **Application Verification** - Start the application using the appropriate run command for the project (e.g., \`npm start\`, \`java -jar app.jar\`, \`./target/app\`, \`go run main.go\`, \`python app.py\`, etc.) and confirm it starts and runs correctly without runtime errors; stop the process after confirming it is healthy
-- Transition task to InReview with a summary of files changed and tests written
+- **Documentation Verification** - Search the repository for documentation files (README.md, CLAUDE.md, docs/, *.md, doc comments, etc.). For each documentation file, verify that any references to code you changed are still accurate. Update any outdated content. If no documentation changes are needed, explicitly note "No documentation updates required" with a brief justification.
+- Transition task to InReview with a summary of files changed, tests written, and documentation updates
 
 ## Required Output:
-Add developerNotes, filesChanged, and testFiles fields when transitioning to InReview.`,
+Add developerNotes, filesChanged, testFiles, docsUpdated, and documentationNotes fields when transitioning to InReview.
+- docsUpdated: Array of documentation file paths that were updated (empty array if none needed)
+- documentationNotes: Brief explanation of what documentation was updated and why, or why no updates were needed`,
     focusAreas: [
       'Test-Driven Development (TDD)',
       'Implementation per architectural recommendations',
       'Security controls implementation',
       'UX/accessibility implementation',
       'All acceptance criteria coverage',
+      'Documentation accuracy and completeness',
     ],
-    researchInstructions: 'Review the codebase for existing patterns, related services, and test conventions. Follow the Architect recommendations from the review phase.',
-    requiredOutputFields: ['developerNotes', 'filesChanged', 'testFiles'],
+    researchInstructions: 'Review the codebase for existing patterns, related services, and test conventions. Follow the Architect recommendations from the review phase. Search for all documentation files (*.md, docs/, doc comments) that may reference code being changed.',
+    requiredOutputFields: ['developerNotes', 'filesChanged', 'testFiles', 'docsUpdated', 'documentationNotes'],
     phase: 'execution',
   },
 
@@ -278,10 +288,11 @@ Add developerNotes, filesChanged, and testFiles fields when transitioning to InR
 3. **Code Standards** - Enforce coding standards, naming conventions, file organization, and documentation.
 4. **Design Pattern Compliance** - Verify the implementation follows the design patterns recommended by the Architect during review phase.
 5. **Security Compliance** - Verify the security requirements from the Security Officer are properly implemented.
+6. **Documentation Verification** - Verify the developer has reviewed and updated all relevant documentation. Check the docsUpdated and documentationNotes fields. If code changes affect documented behavior, APIs, configuration, or architecture, confirm the documentation has been updated accordingly. REJECT if significant documentation updates are missing.
 
 ## Decision Criteria:
-- APPROVE (transition to InQA) if code meets standards, tests are comprehensive, and stakeholder requirements are properly implemented.
-- REJECT (transition to NeedsChanges) if there are code quality issues, insufficient tests, or stakeholder requirements not met. Provide specific, actionable feedback.
+- APPROVE (transition to InQA) if code meets standards, tests are comprehensive, stakeholder requirements are properly implemented, and documentation is up to date.
+- REJECT (transition to NeedsChanges) if there are code quality issues, insufficient tests, stakeholder requirements not met, or documentation is outdated/missing. Provide specific, actionable feedback.
 
 ## Required Output:
 Add codeReviewerNotes, codeQualityConcerns (if any), and testResultsSummary fields.`,
@@ -291,6 +302,7 @@ Add codeReviewerNotes, codeQualityConcerns (if any), and testResultsSummary fiel
       'Coding standards and conventions',
       'Design pattern compliance (from Architect)',
       'Security requirement compliance (from Security Officer)',
+      'Documentation accuracy and completeness',
     ],
     researchInstructions: 'Review the git diff for all changed files. Run the test suite and verify coverage metrics. Cross-reference changes against the acceptance criteria and stakeholder notes.',
     requiredOutputFields: ['codeReviewerNotes', 'codeQualityConcerns', 'testResultsSummary'],

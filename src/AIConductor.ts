@@ -131,6 +131,37 @@ export class AIConductor {
         throw new Error(`Workflow validation failed: ${validation.errors.join(', ')}`);
       }
 
+      // 5b. Enforce minimum review quality
+      const MIN_REVIEW_NOTES_LENGTH = 50;
+      if (!input.notes || input.notes.trim().length < MIN_REVIEW_NOTES_LENGTH) {
+        throw new Error(
+          `Review notes too short (${input.notes?.trim().length || 0} chars). ` +
+          `Minimum ${MIN_REVIEW_NOTES_LENGTH} characters required for a substantive review.`
+        );
+      }
+
+      // 5c. Enforce role-specific required fields
+      const requiredAdditionalFields: Record<StakeholderRole, string[]> = {
+        productDirector: ['marketAnalysis'],
+        architect: ['technologyRecommendations', 'designPatterns'],
+        uiUxExpert: ['usabilityFindings', 'accessibilityRequirements'],
+        securityOfficer: ['securityRequirements', 'complianceNotes'],
+      };
+      const requiredFields = requiredAdditionalFields[input.stakeholder] || [];
+      const missingFields: string[] = [];
+      for (const field of requiredFields) {
+        const value = input.additionalFields?.[field as keyof typeof input.additionalFields];
+        if (value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0)) {
+          missingFields.push(field);
+        }
+      }
+      if (missingFields.length > 0) {
+        throw new Error(
+          `Missing required fields for ${input.stakeholder} review: ${missingFields.join(', ')}. ` +
+          `Provide substantive content for each field.`
+        );
+      }
+
       // 6. Calculate new status
       const previousStatus = task.status;
       const newStatus =
@@ -2172,6 +2203,26 @@ export class AIConductor {
         });
       }
 
+      // Rubber-stamp detection: alert on 100% approval rate when reviews have been submitted
+      const totalReviews = Object.values(rejectionRate).reduce((sum, v) => sum + v, 0) +
+        taskFile.tasks.reduce((count, t) => {
+          let reviews = 0;
+          if (t.stakeholderReview.productDirector?.approved) reviews++;
+          if (t.stakeholderReview.architect?.approved) reviews++;
+          if (t.stakeholderReview.uiUxExpert?.approved) reviews++;
+          if (t.stakeholderReview.securityOfficer?.approved) reviews++;
+          return count + reviews;
+        }, 0);
+
+      if (totalReviews >= 4 && rejectedCount === 0) {
+        alerts.push({
+          level: 'warning',
+          msg: `Zero rejections across ${totalReviews} reviews — potential rubber-stamping detected. Consider whether reviews are providing substantive feedback.`,
+        });
+        healthScore -= 10; // Penalize suspicious 100% approval rate
+        healthScore = Math.max(0, Math.min(100, healthScore));
+      }
+
       const result: GetWorkflowMetricsResult = {
         success: true,
         healthScore: Math.round(healthScore),
@@ -2204,36 +2255,109 @@ export class AIConductor {
 
   /**
    * Validate review completeness before submission (Recommendation 7)
+   * Actually inspects the review data for the given task to verify
+   * that all role-specific required fields are present and substantive.
    */
   async validateReviewCompleteness(input: ValidateReviewCompletenessInput): Promise<ValidateReviewCompletenessResult> {
     const missingFields: string[] = [];
+    const warnings: string[] = [];
 
     // Define required fields by stakeholder role
-    const requiredFields: Record<StakeholderRole, string[]> = {
-      productDirector: ['notes', 'marketAnalysis'],
-      architect: ['notes', 'technologyRecommendations', 'designPatterns'],
-      uiUxExpert: ['notes', 'usabilityFindings', 'accessibilityRequirements'],
-      securityOfficer: ['notes', 'securityRequirements', 'complianceNotes'],
+    const requiredFields: Record<StakeholderRole, { field: string; type: 'text' | 'array'; minLength?: number }[]> = {
+      productDirector: [
+        { field: 'notes', type: 'text', minLength: 50 },
+        { field: 'marketAnalysis', type: 'text', minLength: 20 },
+      ],
+      architect: [
+        { field: 'notes', type: 'text', minLength: 50 },
+        { field: 'technologyRecommendations', type: 'array' },
+        { field: 'designPatterns', type: 'array' },
+      ],
+      uiUxExpert: [
+        { field: 'notes', type: 'text', minLength: 50 },
+        { field: 'usabilityFindings', type: 'text', minLength: 20 },
+        { field: 'accessibilityRequirements', type: 'array' },
+      ],
+      securityOfficer: [
+        { field: 'notes', type: 'text', minLength: 50 },
+        { field: 'securityRequirements', type: 'array' },
+        { field: 'complianceNotes', type: 'text', minLength: 20 },
+      ],
     };
 
     const required = requiredFields[input.stakeholder] || [];
 
-    // In practice, validation would check if these fields are present in the review
-    // For now, we return the list of required fields
-    const isComplete = true; // Validation logic would determine this
+    // Load the task to check existing review data
+    try {
+      const taskFile = await this.dbHandler.loadByFeatureSlug(input.featureSlug, input.repoName);
+      const task = taskFile.tasks.find((t) => t.taskId === input.taskId);
 
-    const warnings: string[] = [];
-    if (required.length > 0) {
-      warnings.push(`This role requires ${required.length} field(s): ${required.join(', ')}`);
+      if (!task) {
+        return {
+          success: false,
+          isComplete: false,
+          missingFields: [],
+          warnings: [],
+          error: `Task not found: ${input.taskId}`,
+        };
+      }
+
+      // Check the existing review data for this stakeholder
+      const review = task.stakeholderReview?.[input.stakeholder];
+      if (!review) {
+        // No review submitted yet — all required fields are missing
+        for (const req of required) {
+          missingFields.push(req.field);
+        }
+      } else {
+        // Validate each required field
+        for (const req of required) {
+          const value = (review as any)[req.field];
+          if (req.type === 'text') {
+            const minLen = req.minLength || 20;
+            if (!value || (typeof value === 'string' && value.trim().length < minLen)) {
+              missingFields.push(`${req.field} (min ${minLen} chars, got ${value?.trim?.()?.length || 0})`);
+            }
+          } else if (req.type === 'array') {
+            if (!value || !Array.isArray(value) || value.length === 0) {
+              missingFields.push(`${req.field} (must be non-empty array)`);
+            }
+          }
+        }
+      }
+
+      // Rubber-stamp detection: check if notes are generic/low-effort
+      if (review?.notes) {
+        const notes = review.notes.trim().toLowerCase();
+        const rubberStampPhrases = ['lgtm', 'looks good', 'approved', 'ok', 'no issues', 'all good', 'fine'];
+        if (rubberStampPhrases.some(phrase => notes === phrase || notes === `${phrase}.`)) {
+          warnings.push('Review notes appear to be a rubber-stamp approval. Consider providing substantive analysis.');
+        }
+      }
+
+      const isComplete = missingFields.length === 0;
+      if (!isComplete) {
+        warnings.push(`${missingFields.length} required field(s) are missing or insufficient`);
+      }
+
+      return {
+        success: true,
+        isComplete,
+        missingFields,
+        warnings,
+        message: isComplete
+          ? `Review for ${input.stakeholder} is complete — all ${required.length} required field(s) present`
+          : `Review for ${input.stakeholder} is INCOMPLETE — missing: ${missingFields.join(', ')}`,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        isComplete: false,
+        missingFields: [],
+        warnings: [],
+        error: error instanceof Error ? error.message : String(error),
+      };
     }
-
-    return {
-      success: true,
-      isComplete,
-      missingFields,
-      warnings,
-      message: `Review completeness check for ${input.stakeholder}: ${required.length} required field(s)`,
-    };
   }
 
   /**

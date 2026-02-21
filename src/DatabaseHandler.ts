@@ -42,9 +42,68 @@ export class DatabaseHandler {
 
     this.initializeTables();
     this.runMigrations();
+    this.validateSchemaIntegrity();
     this.migrateOldRoles();
     this.seedRolePrompts();
     this.seedDefaultSettings();
+  }
+
+  /**
+   * Validate that all expected tables and columns exist after migrations.
+   * Throws a fatal error if the schema is incomplete, preventing the server
+   * from starting against a broken database.
+   */
+  private validateSchemaIntegrity(): void {
+    const expectedSchema: Record<string, string[]> = {
+      features: ['feature_slug', 'feature_name', 'created_at', 'last_modified'],
+      tasks: ['feature_slug', 'task_id', 'title', 'description', 'status', 'order_of_execution'],
+      transitions: ['feature_slug', 'task_id', 'from_status', 'to_status', 'timestamp'],
+      acceptance_criteria: ['feature_slug', 'task_id', 'criterion_id', 'criterion', 'priority'],
+      test_scenarios: ['feature_slug', 'task_id', 'scenario_id', 'title', 'description', 'priority'],
+      stakeholder_reviews: ['feature_slug', 'task_id', 'stakeholder', 'approved', 'notes'],
+      workflow_checkpoints: ['repo_name', 'feature_slug', 'description', 'saved_at', 'snapshot'],
+      feature_refinement_steps: ['repo_name', 'feature_slug', 'step_number', 'step_name'],
+      feature_clarifications: ['repo_name', 'feature_slug', 'question', 'asked_at'],
+      feature_acceptance_criteria: ['repo_name', 'feature_slug', 'criterion_id', 'criterion', 'priority'],
+      feature_test_scenarios: ['repo_name', 'feature_slug', 'scenario_id', 'title', 'description', 'priority'],
+      settings: ['key', 'value', 'updated_at'],
+      role_prompts: ['role_id', 'system_prompt'],
+    };
+
+    const errors: string[] = [];
+
+    for (const [table, requiredColumns] of Object.entries(expectedSchema)) {
+      let tableInfo: any[];
+      try {
+        tableInfo = this.db.prepare(`PRAGMA table_info(${table})`).all() as any[];
+      } catch {
+        errors.push(`Table '${table}' does not exist or is inaccessible`);
+        continue;
+      }
+
+      if (tableInfo.length === 0) {
+        errors.push(`Table '${table}' does not exist`);
+        continue;
+      }
+
+      const existingColumns = tableInfo.map((col: any) => col.name);
+      const missingColumns = requiredColumns.filter(c => !existingColumns.includes(c));
+
+      if (missingColumns.length > 0) {
+        errors.push(
+          `Table '${table}' is missing column(s): [${missingColumns.join(', ')}]. ` +
+          `Existing columns: [${existingColumns.join(', ')}]`
+        );
+      }
+    }
+
+    if (errors.length > 0) {
+      throw new Error(
+        `Schema validation failed (${errors.length} error(s)):\n` +
+        errors.map((e, i) => `  ${i + 1}. ${e}`).join('\n') +
+        '\nRun migrations or rebuild the database to fix.'
+      );
+    }
   }
 
   /**
@@ -181,7 +240,8 @@ export class DatabaseHandler {
         question TEXT NOT NULL,
         answer TEXT,
         asked_by TEXT DEFAULT 'llm',
-        created_at TEXT NOT NULL,
+        asked_at TEXT NOT NULL,
+        answered_at TEXT,
         FOREIGN KEY(feature_slug) REFERENCES features(feature_slug) ON DELETE CASCADE
       );
 
@@ -843,8 +903,16 @@ echo "Starting dev workflow for {featureName}..."
       } catch (error) {
         // Migration file might not exist in production build
         // In that case, we'll create the essential multi-repo structures inline
-        console.warn('Migration file not found, applying inline migration...');
-        this.applyMultiRepoMigrationInline();
+        console.warn('Migration 001 file not found, applying inline migration...');
+        try {
+          this.applyMultiRepoMigrationInline();
+        } catch (inlineError) {
+          throw new Error(
+            `Fatal: Failed to apply multi-repo migration. ` +
+            `Original error: ${error instanceof Error ? error.message : String(error)}. ` +
+            `Inline fallback error: ${inlineError instanceof Error ? inlineError.message : String(inlineError)}`
+          );
+        }
       }
     }
 
@@ -857,7 +925,15 @@ echo "Starting dev workflow for {featureName}..."
       try {
         this.db.exec(`ALTER TABLE features ADD COLUMN description TEXT`);
       } catch (e) {
-        // Column may already exist if DB was manually altered — safe to ignore
+        // Column may already exist if DB was manually altered
+        // Verify the column actually exists before ignoring
+        const tableInfo = this.db.prepare('PRAGMA table_info(features)').all() as any[];
+        const hasDescription = tableInfo.some((col: any) => col.name === 'description');
+        if (!hasDescription) {
+          throw new Error(
+            `Fatal: Migration 002 failed — could not add 'description' column to features table: ${e instanceof Error ? e.message : String(e)}`
+          );
+        }
       }
       this.db.prepare(`
         INSERT OR IGNORE INTO _migrations (name, applied_at) VALUES (?, ?)
@@ -894,11 +970,49 @@ echo "Starting dev workflow for {featureName}..."
           CREATE INDEX IF NOT EXISTS idx_dev_queue_composite ON dev_queue(repo_name, feature_slug, status);
         `);
       } catch (e) {
-        console.warn('dev_queue migration warning:', e);
+        throw new Error(
+          `Fatal: Migration 003 (feature_level_queue) failed: ${e instanceof Error ? e.message : String(e)}`
+        );
       }
       this.db.prepare(`
         INSERT OR IGNORE INTO _migrations (name, applied_at) VALUES (?, ?)
       `).run('003_feature_level_queue', new Date().toISOString());
+    }
+
+    // Migration 004: Fix feature_clarifications column name (created_at → asked_at)
+    const clarificationColFix = this.db.prepare(`
+      SELECT * FROM _migrations WHERE name = '004_fix_clarifications_column'
+    `).get();
+
+    if (!clarificationColFix) {
+      try {
+        // Check if old column exists
+        const tableInfo = this.db.prepare(`PRAGMA table_info(feature_clarifications)`).all() as any[];
+        const hasCreatedAt = tableInfo.some((col: any) => col.name === 'created_at');
+        const hasAskedAt = tableInfo.some((col: any) => col.name === 'asked_at');
+
+        if (hasCreatedAt && !hasAskedAt) {
+          this.db.exec(`ALTER TABLE feature_clarifications RENAME COLUMN created_at TO asked_at`);
+        } else if (!hasCreatedAt && !hasAskedAt) {
+          // Table exists but has neither column — add asked_at
+          this.db.exec(`ALTER TABLE feature_clarifications ADD COLUMN asked_at TEXT`);
+        }
+
+        // Also ensure answered_at column exists
+        const hasAnsweredAt = tableInfo.some((col: any) => col.name === 'answered_at');
+        if (!hasAnsweredAt) {
+          try {
+            this.db.exec(`ALTER TABLE feature_clarifications ADD COLUMN answered_at TEXT`);
+          } catch (_) { /* column may already exist */ }
+        }
+      } catch (e) {
+        throw new Error(
+          `Fatal: Migration 004 (fix_clarifications_column) failed: ${e instanceof Error ? e.message : String(e)}`
+        );
+      }
+      this.db.prepare(`
+        INSERT OR IGNORE INTO _migrations (name, applied_at) VALUES (?, ?)
+      `).run('004_fix_clarifications_column', new Date().toISOString());
     }
   }
 
@@ -2055,7 +2169,7 @@ echo "Starting dev workflow for {featureName}..."
 
     const result = this.db.prepare(`
       INSERT INTO feature_clarifications (
-        repo_name, feature_slug, question, answer, created_at, asked_by
+        repo_name, feature_slug, question, answer, asked_at, asked_by
       ) VALUES (?, ?, ?, ?, ?, ?)
     `).run(
       repoName,
