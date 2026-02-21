@@ -2315,12 +2315,12 @@ export class AIConductor {
   // ─────────────────────────────────────────────────────────────────────
 
   /** Return queue-specific settings as a typed object. */
-  getQueueSettings(): { cronIntervalSeconds: number; baseReposFolder: string; cliTool: string; workerEnabled: boolean } {
+  getQueueSettings(): { cronIntervalSeconds: number; baseReposFolder: string; cliTool: string; workerEnabled: boolean; devWorkflowScript?: string } {
     return this.dbHandler.getQueueSettings();
   }
 
   /** Update one or more queue-specific settings. */
-  updateQueueSettings(updates: Partial<{ cronIntervalSeconds: number; baseReposFolder: string; cliTool: string; workerEnabled: boolean }>): void {
+  updateQueueSettings(updates: Partial<{ cronIntervalSeconds: number; baseReposFolder: string; cliTool: string; workerEnabled: boolean; devWorkflowScript: string }>): void {
     this.dbHandler.updateQueueSettings(updates);
   }
 

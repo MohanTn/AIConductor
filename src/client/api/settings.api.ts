@@ -19,6 +19,7 @@ export interface QueueSettings {
   baseReposFolder: string;
   cliTool: 'claude' | 'copilot';
   workerEnabled: boolean;
+  devWorkflowScript?: string;
 }
 
 export class SettingsAPI extends BaseClient {
@@ -36,6 +37,7 @@ export class SettingsAPI extends BaseClient {
       baseReposFolder: data.baseReposFolder,
       cliTool: data.cliTool,
       workerEnabled: data.workerEnabled,
+      devWorkflowScript: data.devWorkflowScript,
     };
   }
 
@@ -57,6 +59,7 @@ export class SettingsAPI extends BaseClient {
       baseReposFolder: data.baseReposFolder,
       cliTool: data.cliTool,
       workerEnabled: data.workerEnabled,
+      devWorkflowScript: data.devWorkflowScript,
     };
   }
 

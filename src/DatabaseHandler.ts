@@ -306,22 +306,49 @@ export class DatabaseHandler {
   }
 
   /**
+   * Get the default dev workflow script template.
+   */
+  private getDefaultDevWorkflowScript(): string {
+    return `#!/bin/bash
+# Dev Workflow Script Template
+# This script is executed when a feature is queued for development
+
+cd "{repoPath}"
+
+# Copy prompts based on CLI tool
+if [ "{cliTool}" = "claude" ]; then
+  echo "Copying Claude prompts..."
+  mkdir -p ~/.claude/commands
+  cp -r ./.claude/commands/* ~/.claude/commands/ 2>/dev/null || true
+else
+  echo "Copying GitHub Copilot prompts..."
+  mkdir -p ~/.copilot/prompts
+  cp -r ./.github/prompts/* ~/.copilot/prompts/ 2>/dev/null || true
+fi
+
+# Run the dev-workflow command
+echo "Starting dev workflow for {featureName}..."
+{cliTool} -p "/dev-workflow repoName: {repoName}, featureName: {featureName}" --allow-all-tool`;
+  }
+
+  /**
    * Get queue-specific settings as a typed object.
    */
-  getQueueSettings(): { cronIntervalSeconds: number; baseReposFolder: string; cliTool: string; workerEnabled: boolean } {
+  getQueueSettings(): { cronIntervalSeconds: number; baseReposFolder: string; cliTool: string; workerEnabled: boolean; devWorkflowScript?: string } {
     const all = this.getAllSettings();
     return {
       cronIntervalSeconds: parseInt(all['cronIntervalSeconds'] ?? '60', 10),
       baseReposFolder: all['baseReposFolder'] ?? '',
       cliTool: all['cliTool'] ?? 'claude',
       workerEnabled: all['workerEnabled'] === 'true',
+      devWorkflowScript: all['devWorkflowScript'] ?? this.getDefaultDevWorkflowScript(),
     };
   }
 
   /**
    * Update multiple queue settings at once.
    */
-  updateQueueSettings(updates: Partial<{ cronIntervalSeconds: number; baseReposFolder: string; cliTool: string; workerEnabled: boolean }>): void {
+  updateQueueSettings(updates: Partial<{ cronIntervalSeconds: number; baseReposFolder: string; cliTool: string; workerEnabled: boolean; devWorkflowScript: string }>): void {
     if (updates.cronIntervalSeconds !== undefined) {
       this.setSetting('cronIntervalSeconds', String(updates.cronIntervalSeconds));
     }
@@ -334,7 +361,11 @@ export class DatabaseHandler {
     if (updates.workerEnabled !== undefined) {
       this.setSetting('workerEnabled', String(updates.workerEnabled));
     }
+    if (updates.devWorkflowScript !== undefined) {
+      this.setSetting('devWorkflowScript', updates.devWorkflowScript);
+    }
   }
+
 
   // ─────────────────────────────────────────────────────────────────────
   // Dev Queue CRUD (T02)

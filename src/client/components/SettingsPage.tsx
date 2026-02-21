@@ -49,12 +49,14 @@ const SettingsPage: React.FC = () => {
     baseReposFolder: '',
     cliTool: 'claude',
     workerEnabled: false,
+    devWorkflowScript: '',
   });
   const [queueDraft, setQueueDraft] = useState<QueueSettings>({
     cronIntervalSeconds: 60,
     baseReposFolder: '',
     cliTool: 'claude',
     workerEnabled: false,
+    devWorkflowScript: '',
   });
   const [queueSaveState, setQueueSaveState] = useState<SaveState>({ status: 'idle' });
 
@@ -251,7 +253,8 @@ const SettingsPage: React.FC = () => {
     queueDraft.cronIntervalSeconds !== queueSettings.cronIntervalSeconds ||
     queueDraft.baseReposFolder !== queueSettings.baseReposFolder ||
     queueDraft.cliTool !== queueSettings.cliTool ||
-    queueDraft.workerEnabled !== queueSettings.workerEnabled;
+    queueDraft.workerEnabled !== queueSettings.workerEnabled ||
+    queueDraft.devWorkflowScript !== queueSettings.devWorkflowScript;
 
   if (loading) {
     return (
@@ -525,26 +528,47 @@ const SettingsPage: React.FC = () => {
               aria-label="Base repositories folder path"
             />
           </div>
-        </div>
 
-        {/* Save button & feedback */}
-        <div className={styles.queueActions}>
-          <button
-            className={styles.saveBtn}
-            onClick={saveQueueSettings}
-            disabled={queueSaveState.status === 'saving' || !queueHasChanges}
-            aria-busy={queueSaveState.status === 'saving'}
-          >
-            {queueSaveState.status === 'saving' ? 'Saving…' : 'Save Queue Settings'}
-          </button>
-
-          {queueSaveState.status === 'success' && (
-            <span className={styles.successMsg} role="status">✓ {queueSaveState.message}</span>
-          )}
-          {queueSaveState.status === 'error' && (
-            <span className={styles.errorMsg} role="alert">✗ {queueSaveState.message}</span>
-          )}
+          {/* Dev Workflow Script */}
+          <div className={`${styles.queueField} ${styles.fullWidth}`}>
+            <label className={styles.queueLabel} htmlFor="devWorkflowScript">
+              Dev Workflow Script
+            </label>
+            <span className={styles.queueHint}>
+              Bash script template executed when a feature is queued for development.
+              Use variables: {'{repoPath}'}, {'{repoName}'}, {'{featureName}'}, {'{cliTool}'}
+            </span>
+            <textarea
+              id="devWorkflowScript"
+              className={styles.textarea}
+              rows={14}
+              value={queueDraft.devWorkflowScript || ''}
+              onChange={e => setQueueDraft(prev => ({ ...prev, devWorkflowScript: e.target.value }))}
+              disabled={queueSaveState.status === 'saving'}
+              placeholder="#!/bin/bash&#10;# Bash script template..."
+              aria-label="Dev workflow script template"
+            />
+          </div>
         </div>
+      </div>
+
+      {/* Save button & feedback */}
+      <div className={styles.queueActions}>
+        <button
+          className={styles.saveBtn}
+          onClick={saveQueueSettings}
+          disabled={queueSaveState.status === 'saving' || !queueHasChanges}
+          aria-busy={queueSaveState.status === 'saving'}
+        >
+          {queueSaveState.status === 'saving' ? 'Saving…' : 'Save Queue Settings'}
+        </button>
+
+        {queueSaveState.status === 'success' && (
+          <span className={styles.successMsg} role="status">✓ {queueSaveState.message}</span>
+        )}
+        {queueSaveState.status === 'error' && (
+          <span className={styles.errorMsg} role="alert">✗ {queueSaveState.message}</span>
+        )}
       </div>
 
       {/* ── Queue Management ── */}

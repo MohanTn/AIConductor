@@ -159,10 +159,10 @@ export function createSettingsRoutes(reviewManager: AIConductor): Router {
   /**
    * PUT /api/settings/queue
    * Updates one or more queue settings.
-   * Body: { cronIntervalSeconds?, baseReposFolder?, cliTool?, workerEnabled? }
+   * Body: { cronIntervalSeconds?, baseReposFolder?, cliTool?, workerEnabled?, devWorkflowScript? }
    */
   router.put('/settings/queue', (req: Request, res: Response): void => {
-    const { cronIntervalSeconds, baseReposFolder, cliTool, workerEnabled } = req.body;
+    const { cronIntervalSeconds, baseReposFolder, cliTool, workerEnabled, devWorkflowScript } = req.body;
 
     // Validate cronIntervalSeconds
     if (cronIntervalSeconds !== undefined) {
@@ -203,12 +203,22 @@ export function createSettingsRoutes(reviewManager: AIConductor): Router {
       return;
     }
 
+    // Validate devWorkflowScript
+    if (devWorkflowScript !== undefined && typeof devWorkflowScript !== 'string') {
+      res.status(400).json({
+        success: false,
+        error: 'devWorkflowScript must be a string',
+      });
+      return;
+    }
+
     try {
       const updates: Record<string, any> = {};
       if (cronIntervalSeconds !== undefined) updates.cronIntervalSeconds = Number(cronIntervalSeconds);
       if (baseReposFolder !== undefined) updates.baseReposFolder = baseReposFolder;
       if (cliTool !== undefined) updates.cliTool = cliTool;
       if (workerEnabled !== undefined) updates.workerEnabled = workerEnabled;
+      if (devWorkflowScript !== undefined) updates.devWorkflowScript = devWorkflowScript;
 
       reviewManager.updateQueueSettings(updates);
       const updated = reviewManager.getQueueSettings();
