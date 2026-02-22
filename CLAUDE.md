@@ -289,6 +289,28 @@ See `DatabaseHandler.ts` `initializeTables()` for complete schema.
 - API endpoints (`/api/tasks`, `/api/features`) hit the database
 - React Context (AppState.tsx) manages current repo, feature, and view mode
 
+### Multi-Server Support Strategy
+AIConductor **does not currently support multi-server deployments** with cross-instance pub/sub. Here's why:
+
+**Current Architecture:**
+- Single-server model with SQLite for persistence
+- Each MCP server has independent in-memory state
+- Suitable for: local development, Docker containers with shared volume, single-instance deployments
+
+**Why Redis Support Was Removed (Feb 2026):**
+- The `redis-pubsub.ts` stub was non-functional and misleading
+- It created false expectations about multi-server support without providing actual functionality
+- Removing it improves code clarity and prevents contributor confusion
+
+**Future Multi-Server Path:**
+When multi-server support becomes necessary, the recommended approach is:
+1. **Database-driven workflow** — All state already stored in SQLite, no Redis needed
+2. **Polling mechanism** — Extend dashboard polling to detect external changes
+3. **Event streaming** — Consider Kafka, EventBridge, or WebSocket tunneling for scale
+4. **API-first design** — Let other servers call this server's MCP tools via HTTP bridge
+
+For now, AIConductor scales vertically within a single container or process. If you need multi-server orchestration, use external tools (e.g., Docker Swarm, Kubernetes) to manage multiple AIConductor instances with shared database volume.
+
 ---
 
 ## Common Development Tasks
