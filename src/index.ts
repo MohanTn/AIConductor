@@ -15,6 +15,15 @@ import { createToolHandlers } from './toolRegistry.js';
 import { TOOLS } from './toolSchemas.js';
 import Ajv from 'ajv';
 
+// Export error types for use throughout the codebase
+export {
+  NotFoundError,
+  ValidationError,
+  ConflictError,
+  PermissionError,
+  ConcurrencyConflictError,
+} from './errors.js';
+
 // Initialize the MCP server
 const server = new Server(
   {
