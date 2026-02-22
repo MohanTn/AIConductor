@@ -4,7 +4,10 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs-extra';
-import { TaskFile, Task, Transition, AcceptanceCriterion, TestScenario, StakeholderReview } from './types.js';
+import {
+  TaskFile, Task, Transition, AcceptanceCriterion, TestScenario, StakeholderReview,
+  DatabaseTaskRow, DatabaseRepoRow, Repo
+} from './types.js';
 import { ROLE_SYSTEM_PROMPTS, RolePromptConfig } from './rolePrompts.js';
 import { PipelineRole } from './types.js';
 import { ConcurrencyConflictError } from './errors.js';
@@ -1208,7 +1211,7 @@ echo "Starting dev workflow for {featureName}..."
   /**
    * Map database row to Task object
    */
-  private mapRowToTask(featureSlug: string, repoName: string, row: any): Task {
+  private mapRowToTask(featureSlug: string, repoName: string, row: DatabaseTaskRow): Task {
     // Load related data
     const transitions = this.loadTransitions(featureSlug, repoName, row.task_id);
     const acceptanceCriteria = this.loadAcceptanceCriteria(featureSlug, repoName, row.task_id);
@@ -1941,10 +1944,10 @@ echo "Starting dev workflow for {featureName}..."
   /**
    * Get a specific repository
    */
-  getRepo(repoName: string): any | null {
+  getRepo(repoName: string): Repo | null {
     const repo = this.db.prepare(`
       SELECT * FROM repos WHERE repo_name = ?
-    `).get(repoName) as any;
+    `).get(repoName) as DatabaseRepoRow | undefined;
 
     if (!repo) return null;
 
