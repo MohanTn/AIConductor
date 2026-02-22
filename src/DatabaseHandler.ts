@@ -233,6 +233,7 @@ export class DatabaseHandler {
         file_url TEXT,
         analysis_summary TEXT,
         extracted_data TEXT,
+        analyzed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY(feature_slug) REFERENCES features(feature_slug) ON DELETE CASCADE
       );
 
@@ -1040,6 +1041,29 @@ echo "Starting dev workflow for {featureName}..."
       this.db.prepare(`
         INSERT OR IGNORE INTO _migrations (name, applied_at) VALUES (?, ?)
       `).run('005_add_task_version', new Date().toISOString());
+    }
+
+    // Migration 006: Add analyzed_at column to feature_attachments
+    const attachmentsMigration = this.db.prepare(`
+      SELECT * FROM _migrations WHERE name = '006_add_attachments_analyzed_at'
+    `).get();
+
+    if (!attachmentsMigration) {
+      try {
+        this.db.exec(`ALTER TABLE feature_attachments ADD COLUMN analyzed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP`);
+      } catch (e) {
+        // Column may already exist
+        const tableInfo = this.db.prepare('PRAGMA table_info(feature_attachments)').all() as any[];
+        const hasAnalyzedAt = tableInfo.some((col: any) => col.name === 'analyzed_at');
+        if (!hasAnalyzedAt) {
+          throw new Error(
+            `Fatal: Migration 006 (add_attachments_analyzed_at) failed: ${e instanceof Error ? e.message : String(e)}`
+          );
+        }
+      }
+      this.db.prepare(`
+        INSERT OR IGNORE INTO _migrations (name, applied_at) VALUES (?, ?)
+      `).run('006_add_attachments_analyzed_at', new Date().toISOString());
     }
   }
 
@@ -2116,9 +2140,10 @@ echo "Starting dev workflow for {featureName}..."
     `).all(repoName, featureSlug) as any[];
 
     return criteria.map(ac => ({
-      criterionId: ac.criterion_id,
+      id: ac.criterion_id,
       criterion: ac.criterion,
       priority: ac.priority,
+      verified: Boolean(ac.verified),
       source: ac.source,
       createdAt: ac.created_at
     }));
@@ -2189,10 +2214,11 @@ echo "Starting dev workflow for {featureName}..."
     `).all(repoName, featureSlug) as any[];
 
     return scenarios.map(ts => ({
-      scenarioId: ts.scenario_id,
+      id: ts.scenario_id,
       title: ts.title,
       description: ts.description,
       priority: ts.priority,
+      manualOnly: Boolean(ts.manual_only),
       type: ts.type,
       preconditions: ts.preconditions,
       expectedResult: ts.expected_result,
@@ -2239,14 +2265,14 @@ echo "Starting dev workflow for {featureName}..."
     const clarifications = this.db.prepare(`
       SELECT * FROM feature_clarifications
       WHERE repo_name = ? AND feature_slug = ?
-      ORDER BY created_at
+      ORDER BY asked_at
     `).all(repoName, featureSlug) as any[];
 
     return clarifications.map(c => ({
       id: c.id,
       question: c.question,
       answer: c.answer,
-      createdAt: c.created_at,
+      createdAt: c.asked_at,
       askedBy: c.asked_by
     }));
   }
@@ -2294,22 +2320,46 @@ echo "Starting dev workflow for {featureName}..."
    * Get all attachment analyses for a feature
    */
   getAttachments(repoName: string, featureSlug: string): any[] {
-    const attachments = this.db.prepare(`
-      SELECT * FROM feature_attachments
-      WHERE repo_name = ? AND feature_slug = ?
-      ORDER BY analyzed_at
-    `).all(repoName, featureSlug) as any[];
+    try {
+      const attachments = this.db.prepare(`
+        SELECT * FROM feature_attachments
+        WHERE repo_name = ? AND feature_slug = ?
+        ORDER BY analyzed_at
+      `).all(repoName, featureSlug) as any[];
 
-    return attachments.map(a => ({
-      id: a.id,
-      attachmentName: a.attachment_name,
-      attachmentType: a.attachment_type,
-      filePath: a.file_path,
-      fileUrl: a.file_url,
-      analysisSummary: a.analysis_summary,
-      extractedData: a.extracted_data ? JSON.parse(a.extracted_data) : null,
-      analyzedAt: a.analyzed_at
-    }));
+      return attachments.map(a => ({
+        id: a.id,
+        attachmentName: a.attachment_name,
+        attachmentType: a.attachment_type,
+        filePath: a.file_path,
+        fileUrl: a.file_url,
+        analysisSummary: a.analysis_summary,
+        extractedData: a.extracted_data ? JSON.parse(a.extracted_data) : null,
+        analyzedAt: a.analyzed_at
+      }));
+    } catch (e) {
+      // If analyzed_at column doesn't exist, fall back to querying without ordering
+      try {
+        const attachments = this.db.prepare(`
+          SELECT * FROM feature_attachments
+          WHERE repo_name = ? AND feature_slug = ?
+        `).all(repoName, featureSlug) as any[];
+
+        return attachments.map(a => ({
+          id: a.id,
+          attachmentName: a.attachment_name,
+          attachmentType: a.attachment_type,
+          filePath: a.file_path,
+          fileUrl: a.file_url,
+          analysisSummary: a.analysis_summary,
+          extractedData: a.extracted_data ? JSON.parse(a.extracted_data) : null,
+          analyzedAt: a.analyzed_at || null
+        }));
+      } catch {
+        // If feature_attachments table doesn't exist or is inaccessible, return empty
+        return [];
+      }
+    }
   }
 
   // ============================================================================
