@@ -92,3 +92,102 @@
   align-items: center;
   gap: 3px;
 }
+
+/* ── Quick-action row ──────────────────────────────────────── */
+.actionRow {
+  margin-top: 6px;
+  display: none;
+  gap: 4px;
+  align-items: center;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--border-light);
+  padding-top: 6px;
+}
+
+/* Show via CSS-only hover/focus-within — zero JS re-renders */
+.card:hover .actionRow,
+.card:focus-within .actionRow {
+  display: flex;
+}
+
+/* Also show when confirming/submitting/error (JS-driven class) */
+.actionRowActive {
+  display: flex !important;
+}
+
+.actionBtn {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 3px;
+  border: 1px solid var(--border-light);
+  background: var(--surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.1s, color 0.1s;
+  line-height: 1.4;
+}
+
+.actionBtn:hover {
+  background: var(--border-light);
+  color: var(--text);
+}
+
+.actionBtn:focus-visible {
+  outline: 2px solid var(--primary, #2196f3);
+  outline-offset: 1px;
+}
+
+.actionBtnPrimary {
+  background: var(--primary, #2196f3);
+  color: #fff;
+  border-color: var(--primary, #2196f3);
+}
+
+.actionBtnPrimary:hover {
+  background: #1976d2;
+  color: #fff;
+}
+
+.actionBtnSecondary {
+  background: transparent;
+  color: var(--text-muted);
+  border-color: var(--border-light);
+}
+
+.confirmRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.confirmText {
+  font-size: 10px;
+  color: var(--text-secondary);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.submitStatus {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.errorRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.errorText {
+  font-size: 10px;
+  color: var(--error, #f44336);
+  flex: 1;
+  min-width: 0;
+}

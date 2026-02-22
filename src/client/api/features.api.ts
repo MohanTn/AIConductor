@@ -38,6 +38,13 @@ export class FeatureAPI extends BaseClient {
   }
 
   /**
+   * Get compressed workflow snapshot: blockages, next role, recommendations
+   */
+  static async getFeatureSnapshot(repoName: string, featureSlug: string): Promise<any> {
+    return this.request(`${this.apiBase}/features/${encodeURIComponent(featureSlug)}/snapshot?repoName=${encodeURIComponent(repoName)}`);
+  }
+
+  /**
    * Create a new feature
    */
   static async createFeature(data: {

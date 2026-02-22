@@ -1,0 +1,145 @@
+.banner {
+  background: var(--surface);
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  margin: 0 12px 8px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+/* Toggle button — always visible */
+.bannerToggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  color: var(--text);
+  transition: background 0.1s;
+}
+
+.bannerToggle:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.bannerToggle:focus-visible {
+  outline: 2px solid var(--primary, #2196f3);
+  outline-offset: -2px;
+}
+
+.bannerIcon {
+  font-size: 14px;
+  color: var(--primary, #2196f3);
+  flex-shrink: 0;
+}
+
+.bannerTitle {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  flex: 1;
+}
+
+.bannerProgress {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.bannerBlockedBadge {
+  font-size: 10px;
+  font-weight: 700;
+  background: #ffebee;
+  color: #f44336;
+  padding: 1px 6px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.bannerChevron {
+  font-size: 13px;
+  color: var(--text-secondary);
+  transition: transform 0.2s ease;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.bannerChevronCollapsed {
+  transform: rotate(-90deg);
+}
+
+/* Body — hidden when collapsed */
+.bannerCollapsed .bannerBody {
+  display: none;
+}
+
+.bannerBody {
+  padding: 0 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bannerRec {
+  font-size: 12px;
+  color: var(--text);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.blockageList {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+/* Each blocked task is a clickable chip that scrolls the board to it */
+.blockageItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 3px;
+  border: 1px solid var(--border-light);
+  background: #fff8e1;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s;
+}
+
+.blockageItem:hover {
+  background: #fff3cd;
+}
+
+.blockageItem:focus-visible {
+  outline: 2px solid var(--primary, #2196f3);
+  outline-offset: 1px;
+}
+
+.blockageId {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  font-family: 'Courier New', monospace;
+  flex-shrink: 0;
+}
+
+.blockageRole {
+  font-size: 10px;
+  font-weight: 600;
+  color: #f59e0b;
+  flex-shrink: 0;
+}
+
+.blockageReason {
+  font-size: 10px;
+  color: var(--text-secondary);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

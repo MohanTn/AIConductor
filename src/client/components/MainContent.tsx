@@ -4,6 +4,7 @@ import { APIClient } from '../api/client';
 import { Feature } from '../types';
 import ContentHeader from './ContentHeader';
 import Board from './Board';
+import WhatNextBanner from './WhatNextBanner';
 import DetailPanel from './DetailPanel';
 import SettingsPage from './SettingsPage';
 import QueueAuditPanel from './QueueAuditPanel';
@@ -98,6 +99,11 @@ const MainContent: React.FC = () => {
     }
   }, [currentFeatureSlug, currentRepo]);
 
+  // Called by TaskCard after a successful inline transition — refresh the board
+  const handleTaskTransition = useCallback(() => {
+    loadFeatureTasks();
+  }, [loadFeatureTasks]);
+
   useEffect(() => {
     if (currentFeatureSlug) {
       loadFeatureTasks();
@@ -153,7 +159,8 @@ const MainContent: React.FC = () => {
       <div className={styles.splitContainer} ref={splitContainerRef}>
         {/* Board panel — takes remaining space */}
         <div className={styles.boardPanel}>
-          <Board tasks={currentTasks} />
+          <WhatNextBanner repoName={currentRepo} featureSlug={currentFeatureSlug} />
+          <Board tasks={currentTasks} onTaskTransition={handleTaskTransition} />
         </div>
 
         {/* Resizer handle */}

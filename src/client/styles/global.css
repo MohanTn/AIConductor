@@ -60,6 +60,16 @@
   outline-offset: 2px;
 }
 
+/* WhatNextBanner scroll-to-task highlight — applied via JS classList */
+@keyframes taskHighlightPulse {
+  0%, 100% { box-shadow: var(--shadow); }
+  40% { box-shadow: 0 0 0 3px var(--primary, #2196f3), var(--shadow-md); }
+}
+
+.taskHighlight {
+  animation: taskHighlightPulse 1.2s ease;
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   background: var(--bg);

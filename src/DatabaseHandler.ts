@@ -7,6 +7,10 @@ import fs from 'fs-extra';
 import { TaskFile, Task, Transition, AcceptanceCriterion, TestScenario, StakeholderReview } from './types.js';
 import { ROLE_SYSTEM_PROMPTS, RolePromptConfig } from './rolePrompts.js';
 import { PipelineRole } from './types.js';
+import { ConcurrencyConflictError } from './errors.js';
+
+// Re-export so existing imports of ConcurrencyConflictError from DatabaseHandler still work.
+export { ConcurrencyConflictError } from './errors.js';
 
 /** Row interface for the dev_queue table (feature-level, not task-level). */
 export interface DevQueueRow {
@@ -56,7 +60,7 @@ export class DatabaseHandler {
   private validateSchemaIntegrity(): void {
     const expectedSchema: Record<string, string[]> = {
       features: ['feature_slug', 'feature_name', 'created_at', 'last_modified'],
-      tasks: ['feature_slug', 'task_id', 'title', 'description', 'status', 'order_of_execution'],
+      tasks: ['feature_slug', 'task_id', 'title', 'description', 'status', 'order_of_execution', 'version'],
       transitions: ['feature_slug', 'task_id', 'from_status', 'to_status', 'timestamp'],
       acceptance_criteria: ['feature_slug', 'task_id', 'criterion_id', 'criterion', 'priority'],
       test_scenarios: ['feature_slug', 'task_id', 'scenario_id', 'title', 'description', 'priority'],
@@ -229,6 +233,7 @@ export class DatabaseHandler {
         file_url TEXT,
         analysis_summary TEXT,
         extracted_data TEXT,
+        analyzed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY(feature_slug) REFERENCES features(feature_slug) ON DELETE CASCADE
       );
 
@@ -1014,6 +1019,52 @@ echo "Starting dev workflow for {featureName}..."
         INSERT OR IGNORE INTO _migrations (name, applied_at) VALUES (?, ?)
       `).run('004_fix_clarifications_column', new Date().toISOString());
     }
+
+    // Migration 005: Add optimistic concurrency version column to tasks
+    const versionMigration = this.db.prepare(`
+      SELECT * FROM _migrations WHERE name = '005_add_task_version'
+    `).get();
+
+    if (!versionMigration) {
+      try {
+        this.db.exec(`ALTER TABLE tasks ADD COLUMN version INTEGER NOT NULL DEFAULT 1`);
+      } catch (e) {
+        // Column may already exist
+        const tableInfo = this.db.prepare('PRAGMA table_info(tasks)').all() as any[];
+        const hasVersion = tableInfo.some((col: any) => col.name === 'version');
+        if (!hasVersion) {
+          throw new Error(
+            `Fatal: Migration 005 (add_task_version) failed: ${e instanceof Error ? e.message : String(e)}`
+          );
+        }
+      }
+      this.db.prepare(`
+        INSERT OR IGNORE INTO _migrations (name, applied_at) VALUES (?, ?)
+      `).run('005_add_task_version', new Date().toISOString());
+    }
+
+    // Migration 006: Add analyzed_at column to feature_attachments
+    const attachmentsMigration = this.db.prepare(`
+      SELECT * FROM _migrations WHERE name = '006_add_attachments_analyzed_at'
+    `).get();
+
+    if (!attachmentsMigration) {
+      try {
+        this.db.exec(`ALTER TABLE feature_attachments ADD COLUMN analyzed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP`);
+      } catch (e) {
+        // Column may already exist
+        const tableInfo = this.db.prepare('PRAGMA table_info(feature_attachments)').all() as any[];
+        const hasAnalyzedAt = tableInfo.some((col: any) => col.name === 'analyzed_at');
+        if (!hasAnalyzedAt) {
+          throw new Error(
+            `Fatal: Migration 006 (add_attachments_analyzed_at) failed: ${e instanceof Error ? e.message : String(e)}`
+          );
+        }
+      }
+      this.db.prepare(`
+        INSERT OR IGNORE INTO _migrations (name, applied_at) VALUES (?, ?)
+      `).run('006_add_attachments_analyzed_at', new Date().toISOString());
+    }
   }
 
   /**
@@ -1178,7 +1229,8 @@ echo "Starting dev workflow for {featureName}..."
       transitions,
       stakeholderReview,
       orderOfExecution: row.order_of_execution,
-      tags: row.tags ? JSON.parse(row.tags) : []
+      tags: row.tags ? JSON.parse(row.tags) : [],
+      version: row.version ?? 1
     };
   }
 
@@ -1285,6 +1337,19 @@ echo "Starting dev workflow for {featureName}..."
           last_modified = excluded.last_modified
       `).run(repo, data.featureSlug, data.featureName, data.createdAt || now, now);
 
+      // Optimistic concurrency: verify each task's version matches the DB before overwriting
+      for (const task of data.tasks) {
+        if (task.version !== undefined) {
+          const dbRow = this.db.prepare(
+            `SELECT version FROM tasks WHERE repo_name = ? AND feature_slug = ? AND task_id = ?`
+          ).get(repo, data.featureSlug, task.taskId) as { version: number } | undefined;
+
+          if (dbRow !== undefined && dbRow.version !== task.version) {
+            throw new ConcurrencyConflictError(task.taskId, task.version, dbRow.version);
+          }
+        }
+      }
+
       // Delete existing tasks and related data (CASCADE will handle related tables)
       this.db.prepare(`DELETE FROM tasks WHERE repo_name = ? AND feature_slug = ?`).run(repo, data.featureSlug);
 
@@ -1297,6 +1362,10 @@ echo "Starting dev workflow for {featureName}..."
     try {
       saveTransaction(taskFile, repoName);
     } catch (error) {
+      // Re-throw concurrency conflicts without wrapping so callers can handle them specifically
+      if (error instanceof ConcurrencyConflictError) {
+        throw error;
+      }
       throw new Error(
         `Failed to save feature: ${error instanceof Error ? error.message : String(error)}`
       );
@@ -1307,13 +1376,16 @@ echo "Starting dev workflow for {featureName}..."
    * Save a single task with all related data
    */
   private saveTask(featureSlug: string, task: Task, repoName: string = 'default'): void {
+    // Increment version on each write (optimistic concurrency)
+    const nextVersion = (task.version !== undefined ? task.version : 0) + 1;
+
     // Insert task
     this.db.prepare(`
       INSERT INTO tasks (
         repo_name, feature_slug, task_id, title, description, status,
         assigned_to, estimated_hours, order_of_execution,
-        tags, dependencies, out_of_scope
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        tags, dependencies, out_of_scope, version
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       repoName,
       featureSlug,
@@ -1326,7 +1398,8 @@ echo "Starting dev workflow for {featureName}..."
       task.orderOfExecution,
       task.tags ? JSON.stringify(task.tags) : null,
       task.dependencies ? JSON.stringify(task.dependencies) : null,
-      task.outOfScope ? JSON.stringify(task.outOfScope) : null
+      task.outOfScope ? JSON.stringify(task.outOfScope) : null,
+      nextVersion
     );
 
     // Insert transitions
@@ -2067,9 +2140,10 @@ echo "Starting dev workflow for {featureName}..."
     `).all(repoName, featureSlug) as any[];
 
     return criteria.map(ac => ({
-      criterionId: ac.criterion_id,
+      id: ac.criterion_id,
       criterion: ac.criterion,
       priority: ac.priority,
+      verified: Boolean(ac.verified),
       source: ac.source,
       createdAt: ac.created_at
     }));
@@ -2140,10 +2214,11 @@ echo "Starting dev workflow for {featureName}..."
     `).all(repoName, featureSlug) as any[];
 
     return scenarios.map(ts => ({
-      scenarioId: ts.scenario_id,
+      id: ts.scenario_id,
       title: ts.title,
       description: ts.description,
       priority: ts.priority,
+      manualOnly: Boolean(ts.manual_only),
       type: ts.type,
       preconditions: ts.preconditions,
       expectedResult: ts.expected_result,
@@ -2190,14 +2265,14 @@ echo "Starting dev workflow for {featureName}..."
     const clarifications = this.db.prepare(`
       SELECT * FROM feature_clarifications
       WHERE repo_name = ? AND feature_slug = ?
-      ORDER BY created_at
+      ORDER BY asked_at
     `).all(repoName, featureSlug) as any[];
 
     return clarifications.map(c => ({
       id: c.id,
       question: c.question,
       answer: c.answer,
-      createdAt: c.created_at,
+      createdAt: c.asked_at,
       askedBy: c.asked_by
     }));
   }
@@ -2245,22 +2320,46 @@ echo "Starting dev workflow for {featureName}..."
    * Get all attachment analyses for a feature
    */
   getAttachments(repoName: string, featureSlug: string): any[] {
-    const attachments = this.db.prepare(`
-      SELECT * FROM feature_attachments
-      WHERE repo_name = ? AND feature_slug = ?
-      ORDER BY analyzed_at
-    `).all(repoName, featureSlug) as any[];
+    try {
+      const attachments = this.db.prepare(`
+        SELECT * FROM feature_attachments
+        WHERE repo_name = ? AND feature_slug = ?
+        ORDER BY analyzed_at
+      `).all(repoName, featureSlug) as any[];
 
-    return attachments.map(a => ({
-      id: a.id,
-      attachmentName: a.attachment_name,
-      attachmentType: a.attachment_type,
-      filePath: a.file_path,
-      fileUrl: a.file_url,
-      analysisSummary: a.analysis_summary,
-      extractedData: a.extracted_data ? JSON.parse(a.extracted_data) : null,
-      analyzedAt: a.analyzed_at
-    }));
+      return attachments.map(a => ({
+        id: a.id,
+        attachmentName: a.attachment_name,
+        attachmentType: a.attachment_type,
+        filePath: a.file_path,
+        fileUrl: a.file_url,
+        analysisSummary: a.analysis_summary,
+        extractedData: a.extracted_data ? JSON.parse(a.extracted_data) : null,
+        analyzedAt: a.analyzed_at
+      }));
+    } catch (e) {
+      // If analyzed_at column doesn't exist, fall back to querying without ordering
+      try {
+        const attachments = this.db.prepare(`
+          SELECT * FROM feature_attachments
+          WHERE repo_name = ? AND feature_slug = ?
+        `).all(repoName, featureSlug) as any[];
+
+        return attachments.map(a => ({
+          id: a.id,
+          attachmentName: a.attachment_name,
+          attachmentType: a.attachment_type,
+          filePath: a.file_path,
+          fileUrl: a.file_url,
+          analysisSummary: a.analysis_summary,
+          extractedData: a.extracted_data ? JSON.parse(a.extracted_data) : null,
+          analyzedAt: a.analyzed_at || null
+        }));
+      } catch {
+        // If feature_attachments table doesn't exist or is inaccessible, return empty
+        return [];
+      }
+    }
   }
 
   // ============================================================================

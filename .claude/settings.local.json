@@ -53,7 +53,13 @@
       "Bash(docker exec:*)",
       "Bash(docker cp:*)",
       "Bash(chmod:*)",
-      "mcp__aiconductor-mcp__list_repos"
+      "mcp__aiconductor-mcp__list_repos",
+      "Bash(wc:*)",
+      "Bash(grep:*)",
+      "mcp__aiconductor-mcp__get_refinement_status",
+      "mcp__aiconductor-mcp__validate_review_completeness",
+      "mcp__aiconductor-mcp__update_feature",
+      "mcp__aiconductor-mcp__get_feature"
     ]
   },
   "spinnerTipsEnabled": false,

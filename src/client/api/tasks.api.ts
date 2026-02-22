@@ -75,6 +75,23 @@ export class TaskAPI extends BaseClient {
   }
 
   /**
+   * Transition a task to a new status via the inline quick-action endpoint
+   */
+  static async transitionTask(
+    repoName: string,
+    featureSlug: string,
+    taskId: string,
+    fromStatus: string,
+    toStatus: string,
+    actor?: string,
+  ): Promise<any> {
+    return this.request(`${this.apiBase}/tasks/${encodeURIComponent(taskId)}/transition`, {
+      method: 'POST',
+      body: JSON.stringify({ featureSlug, repoName, fromStatus, toStatus, actor }),
+    });
+  }
+
+  /**
    * Get tasks filtered by status
    */
   static async getTasksByStatus(
