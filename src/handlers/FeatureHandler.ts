@@ -20,17 +20,18 @@ export class FeatureHandler extends BaseHandler {
     repoName: string,
     featureSlug: string,
     featureName: string,
-    description?: string
+    description?: string,
+    intention?: string
   ): any {
     if (!featureSlug || !featureName) {
       throw new ValidationError('Feature slug and name are required');
     }
     const stmt = this.db.prepare(`
-      INSERT INTO features (repo_name, feature_slug, feature_name, description, created_at, last_modified)
-      VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
+      INSERT INTO features (repo_name, feature_slug, feature_name, description, intention, created_at, last_modified)
+      VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
     `);
-    stmt.run(repoName, featureSlug, featureName, description || null);
-    return { repoName, featureSlug, featureName, description };
+    stmt.run(repoName, featureSlug, featureName, description || null, intention || null);
+    return { repoName, featureSlug, featureName, description, intention };
   }
 
   /**

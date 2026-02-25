@@ -328,6 +328,10 @@ export const TOOLS = [
           type: 'string',
           description: 'Plain-text description of the feature scope and objectives (max 10,000 chars)',
         },
+        intention: {
+          type: 'string',
+          description: 'The higher-level goal or purpose this feature ultimately serves — the "why" behind the feature (e.g., "to enable authenticated API calls to the payment provider"). Max 2,000 chars.',
+        },
       },
       required: ['repoName', 'featureSlug', 'featureName'],
     },
@@ -354,6 +358,10 @@ export const TOOLS = [
         description: {
           type: 'string',
           description: 'Updated plain-text description of the feature scope and objectives (max 10,000 chars)',
+        },
+        intention: {
+          type: 'string',
+          description: 'Updated higher-level goal or purpose this feature ultimately serves (max 2,000 chars)',
         },
       },
       required: ['repoName', 'featureSlug'],

@@ -410,6 +410,8 @@ export interface CreateFeatureInput {
   featureSlug: string;
   featureName: string;
   description?: string;
+  /** The higher-level goal or purpose this feature ultimately serves (e.g., "to call authenticated APIs") */
+  intention?: string;
 }
 
 export interface CreateFeatureResult {
@@ -424,6 +426,8 @@ export interface UpdateFeatureInput {
   featureSlug: string;
   featureName?: string;
   description?: string;
+  /** The higher-level goal or purpose this feature ultimately serves */
+  intention?: string;
 }
 
 export interface UpdateFeatureResult {

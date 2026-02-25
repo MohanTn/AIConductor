@@ -80,6 +80,16 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ tasks, feature }) => {
           )}
         </section>
 
+        {/* Feature Intention */}
+        {feature?.intention && (
+          <section className={styles.section} role="region" aria-label="Feature intention">
+            <h3 className={styles.sectionTitle}>Intention</h3>
+            <div className={styles.description} style={{ borderLeft: '3px solid var(--vscode-focusBorder, #007acc)', paddingLeft: '0.75rem', fontStyle: 'italic' }}>
+              {feature.intention}
+            </div>
+          </section>
+        )}
+
         {/* Clarifications */}
         <section className={styles.section} role="region" aria-label="Clarifications">
           <h3 className={styles.sectionTitle}>

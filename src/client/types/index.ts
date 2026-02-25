@@ -93,6 +93,8 @@ export interface Feature {
   featureSlug: string;
   title: string;
   description?: string;
+  /** The higher-level goal or purpose this feature ultimately serves */
+  intention?: string;
   repoName: string;
   createdAt: string;
   tasks?: Task[];

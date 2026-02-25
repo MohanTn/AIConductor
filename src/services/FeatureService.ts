@@ -37,7 +37,7 @@ export class FeatureService extends ServiceBase {
 
   async createFeature(input: CreateFeatureInput): Promise<CreateFeatureResult> {
     try {
-      this.db.createFeature(input.featureSlug, input.featureName, input.repoName, input.description);
+      this.db.createFeature(input.featureSlug, input.featureName, input.repoName, input.description, input.intention);
       this.db.initializeRefinementSteps(input.repoName, input.featureSlug);
 
       return {
@@ -56,16 +56,17 @@ export class FeatureService extends ServiceBase {
 
   async updateFeature(input: UpdateFeatureInput): Promise<UpdateFeatureResult> {
     try {
-      if (!input.featureName && input.description === undefined) {
+      if (!input.featureName && input.description === undefined && input.intention === undefined) {
         return {
           success: false,
           featureSlug: input.featureSlug,
-          error: 'At least one of featureName or description must be provided',
+          error: 'At least one of featureName, description, or intention must be provided',
         };
       }
       this.db.updateFeature(input.featureSlug, input.repoName, {
         featureName: input.featureName,
         description: input.description,
+        intention: input.intention,
       });
       return {
         success: true,
