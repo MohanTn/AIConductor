@@ -1,10 +1,14 @@
 ---
 name: refine-feature
-description: This workflow refines a feature ticket by gathering context, analyzing attachments, clarifying ambiguities, generating SMART acceptance criteria and test scenarios. Uses batched role processing for efficiency.
+description: This workflow refines a feature ticket by capturing the feature's intention (the bigger goal it serves), gathering context, analyzing attachments, clarifying ambiguities, generating SMART acceptance criteria and test scenarios. Uses batched role processing for efficiency.
 ---
 
 # Input
 - feature description
+- feature intention *(optional but highly recommended)* — the **bigger goal or purpose** this feature ultimately serves
+  - Example: "Build OAuth with GitHub" → intention: "so we can call GitHub's API on behalf of the user to sync their repos"
+  - Example: "Add caching layer" → intention: "so the dashboard loads in under 1 second for 10,000 concurrent users"
+  - Example: "Add authentication" → intention: "so authenticated users can call the payment provider's API to process transactions"
 
 # Output
 No file must be created for this workflow. All outputs should be returned in the response and any code changes should be committed to the appropriate feature branch in the repository.
@@ -14,6 +18,23 @@ No file must be created for this workflow. All outputs should be returned in the
 - Gather context about the requirement
 - Compose a concise 2-5 sentence plain-text summary of the feature scope from the user's input — this will be saved as the feature description in the database
 - **[NEW - Rec 1]** Call `mcp__aiconductor__get_workflow_snapshot` to view any prior work on this feature (for context efficiency)
+
+# Step 1.5 - Intention Capture [CRITICAL]
+**The intention is the "why" — the bigger purpose this feature serves beyond its own scope. It drives all downstream decisions: task design, acceptance criteria, stakeholder reviews, and tradeoffs.**
+
+- If the user provided an intention with their request, extract and record it.
+- If no intention was provided, **ask the user before proceeding**:
+  - "What will this feature enable or unblock once it's built? What's the bigger goal it serves?"
+  - Example prompts to guide them:
+    - "Authentication to do what exactly? Call an external API? Allow user login? Federate with SSO?"
+    - "Caching so that what happens? Faster page loads? Reduced API costs? Support offline mode?"
+- Compose a concise 1-3 sentence **Intention Statement** in this form:
+  > "We are building [feature] *so that* [downstream capability or outcome]. This will enable [who] to [what action] without [current friction/blocker]."
+- **Store via `mcp__aiconductor__add_clarification`**:
+  - `question`: "What is the bigger goal or purpose this feature ultimately serves?"
+  - `answer`: The composed Intention Statement
+  - `askedBy`: "llm"
+- The Intention Statement will be passed to `create_feature` as the `intention` field and shown in the dashboard — it must be grounded in what the user said, NOT hallucinated.
 
 # Step 2 - Attachment Analysis
 - For each attachment analyze:
@@ -30,6 +51,20 @@ No file must be created for this workflow. All outputs should be returned in the
 - Present specific, focused clarifying questions organized by category
 - Wait for user answers before proceeding
 - **Store each answer via `mcp__aiconductor__add_clarification`** with the user's response
+
+## 3.0 - Intention Validation & Downstream Impact
+**Ask only if the intention from Step 1.5 is still ambiguous or has multiple interpretations.**
+
+I0. **End-State Validation**: Describe the world after this feature ships — what can users or systems do that they couldn't before?
+   - Example: "After authentication is done, what is the very first API call or action the user should be able to make?"
+I1. **Downstream Consumers**: What features, services, or flows depend on this feature's output?
+   - Example: "Which other features are blocked until this is done? What will they consume from this?"
+I2. **Intention Scope Boundary**: Is the intention narrow (one integration) or broad (platform-wide capability)?
+   - Example: "Is this auth only for GitHub, or will other providers (Google, Okta) need to work the same way?"
+I3. **Intentional Non-Goals**: What should this feature explicitly NOT enable, even if technically possible?
+   - Example: "Should this auth also gate admin-level API calls, or only user-level API calls?"
+
+- **Reference the intention in all subsequent clarification answers** — each answer should make clear how it connects back to the bigger goal.
 
 ## 3.1 - Business & Stakeholder Context
 Ask the user to clarify:
@@ -98,15 +133,18 @@ Ask the user to clarify:
 - **After collecting all answers**, use them to inform Steps 4-6
 
 # Step 4 - Acceptance Criteria Generation (Informed by Clarifications)
-**Use the user's clarification answers from Step 3 to generate targeted acceptance criteria.**
+**Use the Intention Statement from Step 1.5 and the user's clarification answers from Step 3 to generate targeted acceptance criteria.**
 
+- **Lead with intention-driven AC**: The first 1-2 ACs must directly verify the stated intention — that the feature actually enables the downstream capability it was built to provide.
+  - Example for auth-to-call-API intention: "Given a user has completed OAuth and holds a valid access token, when they call [target API endpoint], then the request succeeds with 200 and returns the expected payload."
 - Create 5-8 SMART acceptance criteria (increased from 3-5 for better coverage):
   - Specific: No vague language
   - Measurable: Quantifiable outcomes (use metrics from clarifications Q3)
   - Achievable: Technically feasible (consider constraints from Q17)
-  - Relevant: Tied to problem statement (use clarifications Q2)
+  - Relevant: Tied to **both the feature scope AND the intention** (use I0-I3 + Q2)
   - Testable: Can be verified with a test
 - **Cover:**
+  - **Intention fulfillment** (Step 1.5, I0-I1) — AC that proves the downstream goal is achievable
   - Happy path per target users (use Q1 personas)
   - Edge cases and error scenarios (use Q19 assumptions)
   - Performance/scale requirements (use Q7-Q8)
@@ -114,12 +152,17 @@ Ask the user to clarify:
   - Integration points (use Q6)
   - Data handling and privacy (use Q13)
   - Backward compatibility if needed (use Q10)
+  - Intentional non-goals boundary (use I3) — what this feature must NOT do
 - Write each criterion as a clear, complete sentence in plain English
 - Call `mcp__aiconductor__add_feature_acceptance_criteria` with the generated criteria
 
 # Step 5 - Test Scenarios Generation (Informed by Clarifications)
-**Use the user's clarification answers from Step 3 and AC from Step 4 to generate comprehensive test scenarios.**
+**Use the Intention Statement from Step 1.5, clarification answers from Step 3, and AC from Step 4 to generate comprehensive test scenarios.**
 
+- **Lead with an end-to-end intention scenario (P0)**: The first scenario must validate the complete intended use-case end-to-end, not just the feature in isolation.
+  - Precondition: The feature is built and live.
+  - Steps: Walk through from feature entry-point to the downstream action the intention described.
+  - Expected: The downstream goal (e.g. calling the API) succeeds as intended.
 - Create test scenarios with 1:1+ mapping to acceptance criteria
 - **Test coverage based on clarifications:**
   - Happy path for each persona/user type (use Q1)
@@ -163,8 +206,10 @@ Ask the user to clarify:
   - Estimate effort considering team skills and complexity (use Q17)
 - Use the MCP tool `mcp__aiconductor__create_feature` to create the feature entry
   - **Pass the `description` parameter** with the 2-5 sentence plain-text summary composed in Step 1
-  - The description must be the original user requirement text (condensed) — NOT a hallucinated value
-  - Example: `{ featureSlug: "...", featureName: "...", description: "...", repoName: "..." }`
+  - **Pass the `intention` parameter** with the Intention Statement composed in Step 1.5
+  - Both values must be grounded in what the user said — NOT hallucinated
+  - Example: `{ featureSlug: "...", featureName: "...", description: "...", intention: "We are building X so that Y...", repoName: "..." }`
+- **Reference the intention in EVERY task description**: Each task should include a sentence like "This task contributes to the overall intention: [Intention Statement]" so stakeholders reviewers understand how it fits the bigger picture.
 - Use the MCP tool `mcp__aiconductor__add_task` for each task
 - Ensure each task is:
   - Independently testable
@@ -301,7 +346,7 @@ Ask the user to clarify:
 - Combine all test scenarios into a single text block
 - If using Jira integration: Update the Jira ticket with final AC and test scenarios
 - **[NEW - Rec 3]** Call `mcp__aiconductor__save_workflow_checkpoint` with description "All tasks ReadyForDevelopment - ready for dev workflow"
-- **[NEW]** If the feature description has been refined or improved during the workflow (Steps 3-5 may have clarified the scope), call `mcp__aiconductor__update_feature` with the final polished description so the dashboard Detail view shows accurate context
-- Present the final AC and test scenarios to the user
+- **[UPDATED]** If the feature description or intention has been refined or improved during the workflow (Steps 3-5 may have clarified the scope), call `mcp__aiconductor__update_feature` with both the final polished `description` AND the final `intention` so the dashboard Detail view shows accurate context
+- Present the final Intention Statement, AC, and test scenarios to the user
 - Confirm workflow completion
 

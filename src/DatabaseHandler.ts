@@ -4,7 +4,10 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs-extra';
-import { TaskFile, Task, Transition, AcceptanceCriterion, TestScenario, StakeholderReview } from './types.js';
+import {
+  TaskFile, Task, Transition, AcceptanceCriterion, TestScenario, StakeholderReview,
+  DatabaseTaskRow, DatabaseRepoRow, Repo
+} from './types.js';
 import { ROLE_SYSTEM_PROMPTS, RolePromptConfig } from './rolePrompts.js';
 import { PipelineRole } from './types.js';
 import { ConcurrencyConflictError } from './errors.js';
@@ -1065,6 +1068,29 @@ echo "Starting dev workflow for {featureName}..."
         INSERT OR IGNORE INTO _migrations (name, applied_at) VALUES (?, ?)
       `).run('006_add_attachments_analyzed_at', new Date().toISOString());
     }
+
+    // Migration 007: Add intention column to features table
+    const intentionMigration = this.db.prepare(`
+      SELECT * FROM _migrations WHERE name = '007_add_feature_intention'
+    `).get();
+
+    if (!intentionMigration) {
+      try {
+        this.db.exec(`ALTER TABLE features ADD COLUMN intention TEXT`);
+      } catch (e) {
+        // Column may already exist if DB was manually altered
+        const tableInfo = this.db.prepare('PRAGMA table_info(features)').all() as any[];
+        const hasIntention = tableInfo.some((col: any) => col.name === 'intention');
+        if (!hasIntention) {
+          throw new Error(
+            `Fatal: Migration 007 failed — could not add 'intention' column to features table: ${e instanceof Error ? e.message : String(e)}`
+          );
+        }
+      }
+      this.db.prepare(`
+        INSERT OR IGNORE INTO _migrations (name, applied_at) VALUES (?, ?)
+      `).run('007_add_feature_intention', new Date().toISOString());
+    }
   }
 
   /**
@@ -1208,7 +1234,7 @@ echo "Starting dev workflow for {featureName}..."
   /**
    * Map database row to Task object
    */
-  private mapRowToTask(featureSlug: string, repoName: string, row: any): Task {
+  private mapRowToTask(featureSlug: string, repoName: string, row: DatabaseTaskRow): Task {
     // Load related data
     const transitions = this.loadTransitions(featureSlug, repoName, row.task_id);
     const acceptanceCriteria = this.loadAcceptanceCriteria(featureSlug, repoName, row.task_id);
@@ -1579,18 +1605,19 @@ echo "Starting dev workflow for {featureName}..."
   /**
    * Get all feature slugs
    */
-  getAllFeatures(repoName: string = 'default'): Array<{ featureSlug: string; featureName: string; description: string; lastModified: string; totalTasks: number }> {
+  getAllFeatures(repoName: string = 'default'): Array<{ featureSlug: string; featureName: string; description: string; intention: string; lastModified: string; totalTasks: number }> {
     const rows = this.db.prepare(`
       SELECT
         f.feature_slug,
         f.feature_name,
         f.description,
+        f.intention,
         f.last_modified,
         COUNT(t.id) as total_tasks
       FROM features f
       LEFT JOIN tasks t ON f.feature_slug = t.feature_slug AND f.repo_name = t.repo_name
       WHERE f.repo_name = ?
-      GROUP BY f.feature_slug, f.feature_name, f.description, f.last_modified
+      GROUP BY f.feature_slug, f.feature_name, f.description, f.intention, f.last_modified
       ORDER BY f.last_modified DESC
     `).all(repoName) as any[];
 
@@ -1598,6 +1625,7 @@ echo "Starting dev workflow for {featureName}..."
       featureSlug: row.feature_slug,
       featureName: row.feature_name,
       description: row.description || '',
+      intention: row.intention || '',
       lastModified: row.last_modified,
       totalTasks: row.total_tasks
     }));
@@ -1606,20 +1634,21 @@ echo "Starting dev workflow for {featureName}..."
   /**
    * Create a new feature
    */
-  createFeature(featureSlug: string, featureName: string, repoName: string = 'default', description?: string): void {
+  createFeature(featureSlug: string, featureName: string, repoName: string = 'default', description?: string, intention?: string): void {
     const now = new Date().toISOString();
     const cleanDescription = description ? description.replace(/\x00/g, '').trim().slice(0, 10000) : null;
+    const cleanIntention = intention ? intention.replace(/\x00/g, '').trim().slice(0, 2000) : null;
 
     this.db.prepare(`
-      INSERT INTO features (repo_name, feature_slug, feature_name, description, created_at, last_modified)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(repoName, featureSlug, featureName, cleanDescription, now, now);
+      INSERT INTO features (repo_name, feature_slug, feature_name, description, intention, created_at, last_modified)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(repoName, featureSlug, featureName, cleanDescription, cleanIntention, now, now);
   }
 
   /**
    * Update a feature's name and/or description
    */
-  updateFeature(featureSlug: string, repoName: string = 'default', updates: { featureName?: string; description?: string }): void {
+  updateFeature(featureSlug: string, repoName: string = 'default', updates: { featureName?: string; description?: string; intention?: string }): void {
     const existing = this.db.prepare(
       `SELECT feature_slug FROM features WHERE feature_slug = ? AND repo_name = ?`
     ).get(featureSlug, repoName);
@@ -1638,6 +1667,11 @@ echo "Starting dev workflow for {featureName}..."
     if (updates.description !== undefined) {
       const clean = updates.description.replace(/\x00/g, '').trim().slice(0, 10000);
       fields.push('description = ?');
+      values.push(clean);
+    }
+    if (updates.intention !== undefined) {
+      const clean = updates.intention.replace(/\x00/g, '').trim().slice(0, 2000);
+      fields.push('intention = ?');
       values.push(clean);
     }
 
@@ -1941,10 +1975,10 @@ echo "Starting dev workflow for {featureName}..."
   /**
    * Get a specific repository
    */
-  getRepo(repoName: string): any | null {
+  getRepo(repoName: string): Repo | null {
     const repo = this.db.prepare(`
       SELECT * FROM repos WHERE repo_name = ?
-    `).get(repoName) as any;
+    `).get(repoName) as DatabaseRepoRow | undefined;
 
     if (!repo) return null;
 

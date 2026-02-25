@@ -410,6 +410,8 @@ export interface CreateFeatureInput {
   featureSlug: string;
   featureName: string;
   description?: string;
+  /** The higher-level goal or purpose this feature ultimately serves (e.g., "to call authenticated APIs") */
+  intention?: string;
 }
 
 export interface CreateFeatureResult {
@@ -424,6 +426,8 @@ export interface UpdateFeatureInput {
   featureSlug: string;
   featureName?: string;
   description?: string;
+  /** The higher-level goal or purpose this feature ultimately serves */
+  intention?: string;
 }
 
 export interface UpdateFeatureResult {
@@ -540,11 +544,11 @@ export interface DeleteTaskResult {
 export interface Repo {
   repoName: string;
   repoPath: string;
-  repoUrl?: string;
+  repoUrl?: string | null;
   defaultBranch: string;
   createdAt: string;
   lastAccessedAt: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, any> | null;
 }
 
 export interface RegisterRepoInput {
@@ -1098,6 +1102,105 @@ export interface ValidateReviewCompletenessResult {
   warnings: string[];
   message?: string;
   error?: string;
+}
+
+// ============================================================================
+// Database Row Types (T02: Type Safety Improvement)
+// ============================================================================
+
+/**
+ * SQLite table column information from pragma table_info
+ */
+export interface DatabaseColumnInfo {
+  cid: number;
+  name: string;
+  type: string;
+  notnull: 0 | 1;
+  dflt_value: string | null;
+  pk: 0 | 1;
+}
+
+/**
+ * Generic database row interface
+ */
+export interface DatabaseRow {
+  [key: string]: any;
+}
+
+/**
+ * Task row as stored in database
+ * Note: Database stores JSON-serialized strings for complex fields (out_of_scope, dependencies, tags)
+ */
+export interface DatabaseTaskRow extends DatabaseRow {
+  task_id: string;
+  feature_slug: string;
+  repo_name: string;
+  title: string;
+  description: string;
+  status: TaskStatus;
+  order_of_execution: number;
+  assigned_to?: string;
+  out_of_scope?: string; // JSON-serialized array
+  estimated_hours?: number;
+  dependencies?: string; // JSON-serialized array
+  tags?: string; // JSON-serialized array
+  version?: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+/**
+ * Feature row as stored in database
+ */
+export interface DatabaseFeatureRow extends DatabaseRow {
+  feature_slug: string;
+  repo_name: string;
+  feature_name: string;
+  description: string | null;
+  created_at: string;
+  last_modified: string;
+  version: number;
+}
+
+/**
+ * Repository row as stored in database
+ */
+export interface DatabaseRepoRow extends DatabaseRow {
+  repo_name: string;
+  repo_path: string;
+  repo_url: string | null;
+  default_branch: string;
+  created_at: string;
+  last_accessed_at: string;
+  metadata: string | null;
+}
+
+/**
+ * Transition row as stored in database
+ */
+export interface DatabaseTransitionRow extends DatabaseRow {
+  id: number;
+  task_id: string;
+  feature_slug: string;
+  repo_name: string;
+  from_status: TaskStatus;
+  to_status: TaskStatus;
+  actor: ActorType | null;
+  notes: string | null;
+  additional_data: string | null;
+  timestamp: string;
+}
+
+/**
+ * Checkpoint row as stored in database
+ */
+export interface DatabaseCheckpointRow extends DatabaseRow {
+  id: number;
+  repo_name: string;
+  feature_slug: string;
+  description: string;
+  saved_at: string;
+  snapshot_json: string;
 }
 
 // ============================================================================
