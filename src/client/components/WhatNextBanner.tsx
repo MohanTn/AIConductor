@@ -3,8 +3,9 @@
  * Polls the /api/features/:slug/snapshot endpoint and surfaces the top
  * recommendation plus blockage count so the team always knows what to do.
  */
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { APIClient } from '../api/client';
+import { useWebSocket } from '../hooks/useWebSocket';
 import styles from './WhatNextBanner.module.css';
 
 interface Blockage {
@@ -35,12 +36,9 @@ function scrollToTask(taskId: string) {
   setTimeout(() => el.classList.remove('taskHighlight'), 1200);
 }
 
-const POLL_INTERVAL_MS = 15_000;
-
 const WhatNextBanner: React.FC<WhatNextBannerProps> = ({ repoName, featureSlug }) => {
   const [snapshot, setSnapshot] = useState<SnapshotData | null>(null);
   const [collapsed, setCollapsed] = useState(false);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchSnapshot = useCallback(async () => {
     if (!featureSlug || !repoName) return;
@@ -55,11 +53,19 @@ const WhatNextBanner: React.FC<WhatNextBannerProps> = ({ repoName, featureSlug }
   useEffect(() => {
     setSnapshot(null);
     fetchSnapshot();
-    intervalRef.current = setInterval(fetchSnapshot, POLL_INTERVAL_MS);
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
   }, [fetchSnapshot]);
+
+  useWebSocket({
+    onMessage: useCallback((message: any) => {
+      if (
+        message.type === 'task-status-changed' ||
+        message.type === 'feature-changed'
+      ) {
+        fetchSnapshot();
+      }
+    }, [fetchSnapshot]),
+    onConnect: fetchSnapshot,
+  });
 
   if (!snapshot) return null;
 
