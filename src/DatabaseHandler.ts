@@ -897,8 +897,8 @@ echo "Starting dev workflow for {featureName}..."
 
     if (!multiRepoMigration) {
       // Read and execute the migration
-      const __dirname = path.dirname(new URL(import.meta.url).pathname);
-      const migrationPath = path.join(__dirname, 'migrations', '001_add_multi_repo_support.sql');
+      const migrationsDir = path.join(process.cwd(), 'src', 'migrations');
+      const migrationPath = path.join(migrationsDir, '001_add_multi_repo_support.sql');
 
       try {
         const migrationSQL = fs.readFileSync(migrationPath, 'utf-8');

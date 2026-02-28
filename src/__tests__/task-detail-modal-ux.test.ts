@@ -85,8 +85,8 @@ describe('getFilesChanged', () => {
       developerNotes: 'fixed contrast',
     };
     expect(getFilesChanged(additionalData)).toEqual([
-      'src/client/components/TaskDetailModal.tsx',
-      'src/client/components/TaskDetailModal.module.css',
+      { filePath: 'src/client/components/TaskDetailModal.tsx', addedLines: 0, removedLines: 0 },
+      { filePath: 'src/client/components/TaskDetailModal.module.css', addedLines: 0, removedLines: 0 },
     ]);
   });
 
@@ -94,7 +94,10 @@ describe('getFilesChanged', () => {
     const additionalData = {
       filesChanged: ['src/foo.ts', 42, null, 'src/bar.ts', undefined],
     };
-    expect(getFilesChanged(additionalData)).toEqual(['src/foo.ts', 'src/bar.ts']);
+    expect(getFilesChanged(additionalData)).toEqual([
+      { filePath: 'src/foo.ts', addedLines: 0, removedLines: 0 },
+      { filePath: 'src/bar.ts', addedLines: 0, removedLines: 0 },
+    ]);
   });
 
   it('returns an empty array for an empty filesChanged array', () => {
@@ -107,6 +110,10 @@ describe('getFilesChanged', () => {
       'src/client/components/TaskDetailModal.module.css',
       'src/__tests__/task-detail-modal-ux.test.ts',
     ];
-    expect(getFilesChanged({ filesChanged: files })).toEqual(files);
+    expect(getFilesChanged({ filesChanged: files })).toEqual([
+      { filePath: 'src/client/components/TaskDetailModal.tsx', addedLines: 0, removedLines: 0 },
+      { filePath: 'src/client/components/TaskDetailModal.module.css', addedLines: 0, removedLines: 0 },
+      { filePath: 'src/__tests__/task-detail-modal-ux.test.ts', addedLines: 0, removedLines: 0 },
+    ]);
   });
 });

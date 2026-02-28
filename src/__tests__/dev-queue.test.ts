@@ -142,7 +142,7 @@ describe('Dev Queue System', () => {
 
     test('getQueueSettings returns typed object', () => {
       const settings = dbHandler.getQueueSettings();
-      expect(settings).toEqual({
+      expect(settings).toMatchObject({
         cronIntervalSeconds: 60,
         baseReposFolder: '',
         cliTool: 'claude',

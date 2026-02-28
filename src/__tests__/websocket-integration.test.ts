@@ -23,6 +23,7 @@ describe('WebSocket Integration Tests (T07)', () => {
 
   afterEach((done) => {
     manager.shutdown();
+    httpServer.closeAllConnections();
     httpServer.close(() => done());
   });
 
@@ -42,6 +43,8 @@ describe('WebSocket Integration Tests (T07)', () => {
         bob: 0,
         charlie: 0,
       };
+
+      let doneCalled = false;
 
       // Setup presence update listener
       manager.on('client-connected', (data) => {
@@ -71,8 +74,9 @@ describe('WebSocket Integration Tests (T07)', () => {
             presenceUpdates[name as keyof typeof presenceUpdates]++;
           }
 
-          // Once all are connected, send presence updates
-          if (connected === names.length && presenceUpdates.alice > 0 && presenceUpdates.bob > 0) {
+          // Once all are connected and presence exchanged, complete test
+          if (!doneCalled && connected === names.length && presenceUpdates.alice > 0 && presenceUpdates.bob > 0) {
+            doneCalled = true;
             // All connected and exchanged presence
             expect(manager.getConnectionCount()).toBe(3);
             expect(manager.getActiveConnections().length).toBeGreaterThan(0);
@@ -308,7 +312,6 @@ describe('WebSocket Integration Tests (T07)', () => {
       });
 
       let receivedCount = 0;
-      const startTime = Date.now();
 
       const onMessage = (data: any) => {
         const msg = JSON.parse(data.toString());
@@ -316,7 +319,7 @@ describe('WebSocket Integration Tests (T07)', () => {
           receivedCount++;
 
           if (receivedCount === 2) {
-            const latency = Date.now() - startTime;
+            const latency = Date.now() - msg.sentAt;
             console.log(`[Test] Broadcast latency: ${latency}ms`);
             expect(latency).toBeLessThan(100);
             client1.close();
@@ -326,17 +329,24 @@ describe('WebSocket Integration Tests (T07)', () => {
         }
       };
 
-      client1.on('open', () => {
-        setTimeout(() => {
+      // Wait for both clients to open before attaching handlers and broadcasting
+      let openCount = 0;
+      const onOpen = () => {
+        openCount++;
+        if (openCount === 2) {
           client1.on('message', onMessage);
           client2.on('message', onMessage);
 
+          const sentAt = Date.now();
           manager.broadcast({
             type: 'latency-check',
-            sentAt: startTime,
+            sentAt,
           });
-        }, 100);
-      });
+        }
+      };
+
+      client1.on('open', onOpen);
+      client2.on('open', onOpen);
     });
   });
 });
