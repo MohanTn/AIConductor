@@ -48,7 +48,7 @@ jobs:
           fi
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@6d798873191413165ba31bd277f8f206b8500342
+        uses: codecov/codecov-action@e28ff129e5465c2c0dcc6521218050f3a2d6b351
         with:
           files: ./coverage/lcov.info
           flags: unittests
