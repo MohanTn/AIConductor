@@ -485,7 +485,7 @@ export class WebSocketServerManager extends EventEmitter {
    */
   private logEvent(category: string, event: string, message: string): void {
     const timestamp = new Date().toISOString();
-    console.error(`[${timestamp}] [${category}:${event}] ${message}`);
+    console.log(`[${timestamp}] [${category}:${event}] ${message}`);
   }
 }
 

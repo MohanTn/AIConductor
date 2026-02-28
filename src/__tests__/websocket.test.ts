@@ -263,7 +263,7 @@ describe('WebSocketServerManager (T01)', () => {
     });
 
     test('should log all connection events for audit trail', (done) => {
-      const consoleSpy = jest.spyOn(console, 'error').mockImplementation();
+      const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
 
       manager.initialize(httpServer);
       httpServer.listen(TEST_PORT + 6);
