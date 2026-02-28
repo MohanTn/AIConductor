@@ -388,4 +388,74 @@ export class AIConductor {
   resetRolePrompt(roleId: PipelineRole): RolePromptConfig {
     return this.dbHandler.resetRolePrompt(roleId);
   }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Dashboard Route Delegations (public DB access for route handlers)
+  // Replaces reviewManager['dbHandler'] string-indexed private access.
+  // ─────────────────────────────────────────────────────────────────────
+
+  getAllFeatures(repoName: string): Array<{ featureSlug: string; featureName: string; description: string; intention: string; lastModified: string; totalTasks: number }> {
+    return this.dbHandler.getAllFeatures(repoName);
+  }
+
+  createFeatureRecord(featureSlug: string, featureName: string, repoName: string): void {
+    this.dbHandler.createFeature(featureSlug, featureName, repoName);
+  }
+
+  deleteFeatureRecord(featureSlug: string, repoName: string): void {
+    this.dbHandler.deleteFeature(featureSlug, repoName);
+  }
+
+  getFeatureAcceptanceCriteria(repoName: string, featureSlug: string): any[] {
+    return this.dbHandler.getFeatureAcceptanceCriteria(repoName, featureSlug);
+  }
+
+  getFeatureTestScenarios(repoName: string, featureSlug: string): any[] {
+    return this.dbHandler.getFeatureTestScenarios(repoName, featureSlug);
+  }
+
+  getRefinementSteps(repoName: string, featureSlug: string): any[] {
+    return this.dbHandler.getRefinementSteps(repoName, featureSlug);
+  }
+
+  getClarifications(repoName: string, featureSlug: string): any[] {
+    return this.dbHandler.getClarifications(repoName, featureSlug);
+  }
+
+  getAttachments(repoName: string, featureSlug: string): any[] {
+    return this.dbHandler.getAttachments(repoName, featureSlug);
+  }
+
+  getRefinementStatusRecord(repoName: string, featureSlug: string): any {
+    return this.dbHandler.getRefinementStatus(repoName, featureSlug);
+  }
+
+  async loadByFeatureSlug(featureSlug: string, repoName: string) {
+    return this.dbHandler.loadByFeatureSlug(featureSlug, repoName);
+  }
+
+  addTaskRecord(featureSlug: string, task: any, repoName: string): string {
+    return this.dbHandler.addTask(featureSlug, task, repoName);
+  }
+
+  updateRefinementStepRecord(repoName: string, featureSlug: string, stepNumber: number, completed: boolean, summary: string, data?: Record<string, any>): void {
+    this.dbHandler.updateRefinementStep(repoName, featureSlug, stepNumber, completed, summary, data);
+  }
+
+  addFeatureAcceptanceCriteriaRecord(repoName: string, featureSlug: string, criteria: any[]): number {
+    return this.dbHandler.addFeatureAcceptanceCriteria(repoName, featureSlug, criteria);
+  }
+
+  addFeatureTestScenariosRecord(repoName: string, featureSlug: string, scenarios: any[]): number {
+    return this.dbHandler.addFeatureTestScenarios(repoName, featureSlug, scenarios);
+  }
+
+  addClarificationRecord(repoName: string, featureSlug: string, question: string, answer?: string, askedBy?: 'llm' | 'user'): number {
+    return this.dbHandler.addClarification(repoName, featureSlug, question, answer, askedBy);
+  }
+
+  // analysisSummary is 5th arg (required), then filePath/fileUrl optional — matches DatabaseHandler signature
+  addAttachmentAnalysisRecord(repoName: string, featureSlug: string, attachmentName: string, attachmentType: string, analysisSummary: string, filePath?: string, fileUrl?: string, extractedData?: Record<string, any>): number {
+    return this.dbHandler.addAttachmentAnalysis(repoName, featureSlug, attachmentName, attachmentType, analysisSummary, filePath, fileUrl, extractedData);
+  }
 }
