@@ -1636,8 +1636,8 @@ echo "Starting dev workflow for {featureName}..."
    */
   createFeature(featureSlug: string, featureName: string, repoName: string = 'default', description?: string, intention?: string): void {
     const now = new Date().toISOString();
-    const cleanDescription = description ? description.replace(/\x00/g, '').trim().slice(0, 10000) : null;
-    const cleanIntention = intention ? intention.replace(/\x00/g, '').trim().slice(0, 2000) : null;
+    const cleanDescription = description ? description.replace(new RegExp(String.fromCharCode(0), 'g'), '').trim().slice(0, 10000) : null;
+    const cleanIntention = intention ? intention.replace(new RegExp(String.fromCharCode(0), 'g'), '').trim().slice(0, 2000) : null;
 
     this.db.prepare(`
       INSERT INTO features (repo_name, feature_slug, feature_name, description, intention, created_at, last_modified)
@@ -1665,12 +1665,12 @@ echo "Starting dev workflow for {featureName}..."
       values.push(updates.featureName);
     }
     if (updates.description !== undefined) {
-      const clean = updates.description.replace(/\x00/g, '').trim().slice(0, 10000);
+      const clean = updates.description.replace(new RegExp(String.fromCharCode(0), 'g'), '').trim().slice(0, 10000);
       fields.push('description = ?');
       values.push(clean);
     }
     if (updates.intention !== undefined) {
-      const clean = updates.intention.replace(/\x00/g, '').trim().slice(0, 2000);
+      const clean = updates.intention.replace(new RegExp(String.fromCharCode(0), 'g'), '').trim().slice(0, 2000);
       fields.push('intention = ?');
       values.push(clean);
     }
