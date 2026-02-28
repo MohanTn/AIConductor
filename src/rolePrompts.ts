@@ -57,7 +57,16 @@ For EACH search result, document:
 ## Required Output:
 Add detailed analysis including:
 - marketAnalysis: Include market size, growth trends, demand signals, and ROI justification
-- competitorAnalysis: Include 3+ competitors analyzed, their features, pricing, user sentiment, and how this feature differentiates`,
+- competitorAnalysis: Include 3+ competitors analyzed, their features, pricing, user sentiment, and how this feature differentiates
+
+## When calling add_stakeholder_review, pass these additionalFields:
+| Field | Type | Description |
+|---|---|---|
+| \`marketAnalysis\` | \`string\` | Market size, demand signals, ROI justification |
+| \`competitorAnalysis\` | \`string\` | 3+ competitors with features, pricing, sentiment |
+| \`quickSummary\` | \`string\` | 1–2 sentence TL;DR of the review |
+
+> These fields are stored permanently in the database. Do NOT include PII, credentials, or sensitive internal data.`,
     focusAreas: [
       'Competitor feature comparison and differentiation',
       'Market demand validation with data',
@@ -127,7 +136,15 @@ For EACH search result, document:
 Add detailed analysis including:
 - technologyRecommendations: For each recommended tech, include: tool/library name, version, justification, alternatives considered, community support level, and integration notes
 - designPatterns: For each pattern, include: pattern name, justification, implementation approach, how it solves the architectural problem, and known tradeoffs
-- Additional: Add technical feasibility assessment, scalability analysis, and implementation risk mitigation strategies`,
+- Additional: Add technical feasibility assessment, scalability analysis, and implementation risk mitigation strategies
+
+## When calling add_stakeholder_review, pass these additionalFields:
+| Field | Type | Description |
+|---|---|---|
+| \`technologyRecommendations\` | \`string[]\` | Array — one entry per recommended tool/library |
+| \`designPatterns\` | \`string[]\` | Array — one entry per applicable design pattern |
+
+> These fields are stored permanently in the database. Do NOT include PII, credentials, or sensitive internal data.`,
     focusAreas: [
       'Industry-proven implementation patterns',
       'Technology selection and version strategy',
@@ -194,7 +211,16 @@ For EACH search result, document:
 Add detailed analysis including:
 - usabilityFindings: Include learnability, efficiency, error prevention, user satisfaction factors based on research
 - accessibilityRequirements: Detailed WCAG 2.1 AA requirements, screen reader support, keyboard navigation, color contrast specs
-- userBehaviorInsights: User mental models, common interaction patterns, expectations, and how to guide users effectively`,
+- userBehaviorInsights: User mental models, common interaction patterns, expectations, and how to guide users effectively
+
+## When calling add_stakeholder_review, pass these additionalFields:
+| Field | Type | Description |
+|---|---|---|
+| \`usabilityFindings\` | \`string\` | Learnability, efficiency, error prevention findings |
+| \`accessibilityRequirements\` | \`string[]\` | Array — one entry per WCAG/ARIA requirement |
+| \`userBehaviorInsights\` | \`string\` | Mental models, interaction patterns, expectations |
+
+> These fields are stored permanently in the database. Do NOT include PII, credentials, or sensitive internal data.`,
     focusAreas: [
       'User behavior research and UX studies',
       'Usability and learnability metrics',
@@ -223,7 +249,15 @@ Add detailed analysis including:
 - REJECT if there are critical security vulnerabilities, compliance violations, or missing security controls that must be addressed before development.
 
 ## Required Output:
-Add your analysis as structured notes including securityRequirements and complianceNotes fields.`,
+Add your analysis as structured notes including securityRequirements and complianceNotes fields.
+
+## When calling add_stakeholder_review, pass these additionalFields:
+| Field | Type | Description |
+|---|---|---|
+| \`securityRequirements\` | \`string[]\` | Array — one entry per required security control |
+| \`complianceNotes\` | \`string\` | Compliance standards, audit requirements, notes |
+
+> These fields are stored permanently in the database. Do NOT include PII, credentials, API keys, or sensitive internal data.`,
     focusAreas: [
       'OWASP Top 10 vulnerability assessment',
       'Data protection and encryption requirements',
