@@ -154,6 +154,7 @@ const MainContent: React.FC = () => {
       <ContentHeader
         featureTitle={featureTitle}
         tasks={currentTasks}
+        onResetComplete={loadFeatureTasks}
       />
 
       <div className={styles.splitContainer} ref={splitContainerRef}>

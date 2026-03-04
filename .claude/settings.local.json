@@ -59,7 +59,10 @@
       "mcp__aiconductor-mcp__get_refinement_status",
       "mcp__aiconductor-mcp__validate_review_completeness",
       "mcp__aiconductor-mcp__update_feature",
-      "mcp__aiconductor-mcp__get_feature"
+      "mcp__aiconductor-mcp__get_feature",
+      "WebSearch",
+      "Bash(timeout 15 npm start:*)",
+      "Bash(npm run:*)"
     ]
   },
   "spinnerTipsEnabled": false,

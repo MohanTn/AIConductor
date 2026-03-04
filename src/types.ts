@@ -290,7 +290,7 @@ export const DEV_WORKFLOW_RULES: Record<TaskStatus, DevWorkflowRule> = {
   InReview: { allowedActors: ['codeReviewer'], allowedTransitions: ['InQA', 'NeedsChanges'] },
   InQA: { allowedActors: ['qa'], allowedTransitions: ['Done', 'NeedsChanges'] },
   NeedsChanges: { allowedActors: ['developer'], allowedTransitions: ['InProgress'] },
-  Done: { allowedActors: [], allowedTransitions: [] },
+  Done: { allowedActors: ['system'], allowedTransitions: ['ReadyForDevelopment'] },
 };
 
 // Tool input/output interfaces

@@ -1,16 +1,31 @@
 import React, { useState } from 'react';
 import { useAppState } from '../state/AppState';
-import { Task } from '../types';
+import { Task, TaskStatus } from '../types';
+import ResetDevModal from './ResetDevModal';
 import styles from './ContentHeader.module.css';
+
+/** Statuses that indicate a task has entered the dev pipeline */
+const POST_DEV_STATUSES: TaskStatus[] = [
+  'ToDo',
+  'InProgress',
+  'InReview',
+  'InQA',
+  'Done',
+  'NeedsChanges',
+];
 
 interface ContentHeaderProps {
   featureTitle: string;
   tasks: Task[];
+  onResetComplete?: () => void;
 }
 
-const ContentHeader: React.FC<ContentHeaderProps> = ({ featureTitle, tasks }) => {
+const ContentHeader: React.FC<ContentHeaderProps> = ({ featureTitle, tasks, onResetComplete }) => {
   const { searchQuery, setSearchQuery, currentRepo, currentFeatureSlug } = useAppState();
   const [copied, setCopied] = useState(false);
+  const [showResetModal, setShowResetModal] = useState(false);
+
+  const hasPostDevTasks = tasks.some(t => POST_DEV_STATUSES.includes(t.status));
 
   const stats = React.useMemo(() => {
     const total = tasks.length;
@@ -86,6 +101,16 @@ const ContentHeader: React.FC<ContentHeaderProps> = ({ featureTitle, tasks }) =>
       </div>
 
       <div className={styles.contentHeaderRight}>
+        {hasPostDevTasks && (
+          <button
+            className={styles.resetDevBtn}
+            onClick={() => setShowResetModal(true)}
+            aria-label="Reset development workflow for this feature"
+            title="Reset all tasks to ReadyForDevelopment"
+          >
+            ↺ Reset Dev
+          </button>
+        )}
         <input
           type="search"
           className={styles.searchInput}
@@ -95,6 +120,19 @@ const ContentHeader: React.FC<ContentHeaderProps> = ({ featureTitle, tasks }) =>
           aria-label="Search tasks"
         />
       </div>
+
+      {showResetModal && (
+        <ResetDevModal
+          repoName={currentRepo}
+          featureSlug={currentFeatureSlug}
+          taskCount={tasks.length}
+          onClose={() => setShowResetModal(false)}
+          onSuccess={() => {
+            setShowResetModal(false);
+            onResetComplete?.();
+          }}
+        />
+      )}
     </div>
   );
 };

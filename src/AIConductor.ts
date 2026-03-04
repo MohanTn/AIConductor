@@ -76,6 +76,7 @@ import {
   ValidateReviewCompletenessResult,
   GetSimilarTasksInput,
   GetSimilarTasksResult,
+  TaskStatus,
 } from './types.js';
 import { DatabaseHandler } from './DatabaseHandler.js';
 import { WorkflowValidator } from './WorkflowValidator.js';
@@ -172,6 +173,60 @@ export class AIConductor {
 
   async batchTransitionTasks(input: BatchTransitionTasksInput): Promise<BatchTransitionTasksResult> {
     return this.transitionService.batchTransitionTasks(input);
+  }
+
+  /**
+   * Reset all tasks in a feature to ReadyForDevelopment so the dev-workflow
+   * can be re-run after post-release fixes. Uses system actor for each group
+   * of tasks that share the same current status.
+   */
+  async resetDevWorkflow(
+    repoName: string,
+    featureSlug: string
+  ): Promise<{ success: boolean; tasksReset: number }> {
+    const summary = await this.getReviewSummary(repoName, featureSlug);
+    const tasks = summary.tasks || [];
+
+    if (tasks.length === 0) {
+      return { success: true, tasksReset: 0 };
+    }
+
+    // Group task IDs by their current status so we can batch-transition each group
+    const byStatus = new Map<TaskStatus, string[]>();
+    for (const task of tasks) {
+      if (task.status === 'ReadyForDevelopment') continue; // already at target
+      const group = byStatus.get(task.status) ?? [];
+      group.push(task.taskId);
+      byStatus.set(task.status, group);
+    }
+
+    let totalReset = 0;
+    for (const [fromStatus, taskIds] of byStatus) {
+      const result = await this.batchTransitionTasks({
+        repoName,
+        featureSlug,
+        taskIds,
+        fromStatus,
+        toStatus: 'ReadyForDevelopment',
+        actor: 'system',
+        notes: 'Reset by resetDevWorkflow — re-running dev pipeline',
+      });
+      totalReset += result.successCount ?? 0;
+    }
+
+    // Include tasks that were already at ReadyForDevelopment in the count
+    const alreadyReady = tasks.filter(t => t.status === 'ReadyForDevelopment').length;
+    const grandTotal = totalReset + alreadyReady;
+
+    console.log(JSON.stringify({
+      action: 'resetDevWorkflow',
+      repoName,
+      featureSlug,
+      tasksReset: grandTotal,
+      timestamp: new Date().toISOString(),
+    }));
+
+    return { success: true, tasksReset: grandTotal };
   }
 
   async batchUpdateAcceptanceCriteria(
@@ -387,5 +442,75 @@ export class AIConductor {
 
   resetRolePrompt(roleId: PipelineRole): RolePromptConfig {
     return this.dbHandler.resetRolePrompt(roleId);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Dashboard Route Delegations (public DB access for route handlers)
+  // Replaces reviewManager['dbHandler'] string-indexed private access.
+  // ─────────────────────────────────────────────────────────────────────
+
+  getAllFeatures(repoName: string): Array<{ featureSlug: string; featureName: string; description: string; intention: string; lastModified: string; totalTasks: number }> {
+    return this.dbHandler.getAllFeatures(repoName);
+  }
+
+  createFeatureRecord(featureSlug: string, featureName: string, repoName: string): void {
+    this.dbHandler.createFeature(featureSlug, featureName, repoName);
+  }
+
+  deleteFeatureRecord(featureSlug: string, repoName: string): void {
+    this.dbHandler.deleteFeature(featureSlug, repoName);
+  }
+
+  getFeatureAcceptanceCriteria(repoName: string, featureSlug: string): any[] {
+    return this.dbHandler.getFeatureAcceptanceCriteria(repoName, featureSlug);
+  }
+
+  getFeatureTestScenarios(repoName: string, featureSlug: string): any[] {
+    return this.dbHandler.getFeatureTestScenarios(repoName, featureSlug);
+  }
+
+  getRefinementSteps(repoName: string, featureSlug: string): any[] {
+    return this.dbHandler.getRefinementSteps(repoName, featureSlug);
+  }
+
+  getClarifications(repoName: string, featureSlug: string): any[] {
+    return this.dbHandler.getClarifications(repoName, featureSlug);
+  }
+
+  getAttachments(repoName: string, featureSlug: string): any[] {
+    return this.dbHandler.getAttachments(repoName, featureSlug);
+  }
+
+  getRefinementStatusRecord(repoName: string, featureSlug: string): any {
+    return this.dbHandler.getRefinementStatus(repoName, featureSlug);
+  }
+
+  async loadByFeatureSlug(featureSlug: string, repoName: string) {
+    return this.dbHandler.loadByFeatureSlug(featureSlug, repoName);
+  }
+
+  addTaskRecord(featureSlug: string, task: any, repoName: string): string {
+    return this.dbHandler.addTask(featureSlug, task, repoName);
+  }
+
+  updateRefinementStepRecord(repoName: string, featureSlug: string, stepNumber: number, completed: boolean, summary: string, data?: Record<string, any>): void {
+    this.dbHandler.updateRefinementStep(repoName, featureSlug, stepNumber, completed, summary, data);
+  }
+
+  addFeatureAcceptanceCriteriaRecord(repoName: string, featureSlug: string, criteria: any[]): number {
+    return this.dbHandler.addFeatureAcceptanceCriteria(repoName, featureSlug, criteria);
+  }
+
+  addFeatureTestScenariosRecord(repoName: string, featureSlug: string, scenarios: any[]): number {
+    return this.dbHandler.addFeatureTestScenarios(repoName, featureSlug, scenarios);
+  }
+
+  addClarificationRecord(repoName: string, featureSlug: string, question: string, answer?: string, askedBy?: 'llm' | 'user'): number {
+    return this.dbHandler.addClarification(repoName, featureSlug, question, answer, askedBy);
+  }
+
+  // analysisSummary is 5th arg (required), then filePath/fileUrl optional — matches DatabaseHandler signature
+  addAttachmentAnalysisRecord(repoName: string, featureSlug: string, attachmentName: string, attachmentType: string, analysisSummary: string, filePath?: string, fileUrl?: string, extractedData?: Record<string, any>): number {
+    return this.dbHandler.addAttachmentAnalysis(repoName, featureSlug, attachmentName, attachmentType, analysisSummary, filePath, fileUrl, extractedData);
   }
 }

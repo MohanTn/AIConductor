@@ -43,6 +43,14 @@ const REPO_NAME = 'test-repo';
 const FEATURE_SLUG = 'test-feature';
 const FEATURE_NAME = 'Test Feature';
 
+/** Runs all 4 stakeholder approvals with minimum required fields so the task reaches ReadyForDevelopment. */
+async function approveAllStakeholders(manager: AIConductor, repoName: string, featureSlug: string, taskId: string) {
+  await manager.addReview({ repoName, featureSlug, taskId, stakeholder: 'productDirector', decision: 'approve', notes: 'Approved - market demand confirmed and feature scope is well-defined', additionalFields: { marketAnalysis: 'Market demand confirmed', competitorAnalysis: 'Competitor gap identified' } });
+  await manager.addReview({ repoName, featureSlug, taskId, stakeholder: 'architect', decision: 'approve', notes: 'Architecture approved - patterns and technical approach are sound', additionalFields: { technologyRecommendations: ['TypeScript', 'SQLite'], designPatterns: ['Repository Pattern'] } });
+  await manager.addReview({ repoName, featureSlug, taskId, stakeholder: 'uiUxExpert', decision: 'approve', notes: 'Design approved - usability and accessibility requirements are met', additionalFields: { usabilityFindings: 'Interface is clean and intuitive', accessibilityRequirements: ['WCAG 2.1 AA'] } });
+  await manager.addReview({ repoName, featureSlug, taskId, stakeholder: 'securityOfficer', decision: 'approve', notes: 'Security checks passed - all OWASP requirements verified and compliant', additionalFields: { securityRequirements: ['Input validation required'], complianceNotes: 'OWASP guidelines followed' } });
+}
+
 /**
  * Helper to create a fully set up manager with repo + feature + task.
  */
@@ -86,10 +94,7 @@ describe('All MCP Tools - Comprehensive Test Suite', () => {
     manager = new AIConductor(testDbPath);
     dbHandler = (manager as any).dbHandler as DatabaseHandler;
 
-    // Apply multi-repo migration
-    const migrationPath = path.join(process.cwd(), 'src', 'migrations', '001_add_multi_repo_support.sql');
-    const migrationSQL = fs.readFileSync(migrationPath, 'utf-8');
-    dbHandler['db'].exec(migrationSQL);
+    // Migration is applied automatically by DatabaseHandler constructor
   });
 
   afterEach(() => {
@@ -545,22 +550,7 @@ describe('All MCP Tools - Comprehensive Test Suite', () => {
       await setupFullEnvironment(manager, dbHandler);
 
       // Approve through all stakeholders
-      await manager.addReview({
-        repoName: REPO_NAME, featureSlug: FEATURE_SLUG, taskId: 'T01',
-        stakeholder: 'productDirector', decision: 'approve', notes: 'Good',
-      });
-      await manager.addReview({
-        repoName: REPO_NAME, featureSlug: FEATURE_SLUG, taskId: 'T01',
-        stakeholder: 'architect', decision: 'approve', notes: 'Solid',
-      });
-      await manager.addReview({
-        repoName: REPO_NAME, featureSlug: FEATURE_SLUG, taskId: 'T01',
-        stakeholder: 'uiUxExpert', decision: 'approve', notes: 'Nice UI',
-      });
-      await manager.addReview({
-        repoName: REPO_NAME, featureSlug: FEATURE_SLUG, taskId: 'T01',
-        stakeholder: 'securityOfficer', decision: 'approve', notes: 'Secure',
-      });
+      await approveAllStakeholders(manager, REPO_NAME, FEATURE_SLUG, 'T01');
 
       const result = await manager.getReviewSummary(REPO_NAME, FEATURE_SLUG);
       expect(result.tasksByStatus.ReadyForDevelopment).toBe(1);
@@ -612,7 +602,7 @@ describe('All MCP Tools - Comprehensive Test Suite', () => {
         repoName: REPO_NAME, featureSlug: FEATURE_SLUG, taskId: 'T01',
         stakeholder: 'productDirector',
         decision: 'approve',
-        notes: 'Aligned with product goals',
+        notes: 'Aligned with product goals - market demand confirmed and scope is appropriate',
         additionalFields: {
           marketAnalysis: 'Strong demand for login feature',
           competitorAnalysis: 'Competitors use OAuth',
@@ -629,7 +619,8 @@ describe('All MCP Tools - Comprehensive Test Suite', () => {
         repoName: REPO_NAME, featureSlug: FEATURE_SLUG, taskId: 'T01',
         stakeholder: 'productDirector',
         decision: 'reject',
-        notes: 'Needs more clarity',
+        notes: 'Needs more clarity on the implementation approach and acceptance criteria',
+        additionalFields: { marketAnalysis: 'Market analysis shows insufficient demand for this feature scope' },
       });
 
       expect(result.success).toBe(true);
@@ -652,7 +643,7 @@ describe('All MCP Tools - Comprehensive Test Suite', () => {
       // Product Director approves
       let result = await manager.addReview({
         repoName: REPO_NAME, featureSlug: FEATURE_SLUG, taskId: 'T01',
-        stakeholder: 'productDirector', decision: 'approve', notes: 'Approved',
+        stakeholder: 'productDirector', decision: 'approve', notes: 'Approved - all requirements verified and implementation looks correct',
         additionalFields: { marketAnalysis: 'Good', competitorAnalysis: 'None' },
       });
       expect(result.newStatus).toBe('PendingArchitect');
@@ -660,7 +651,7 @@ describe('All MCP Tools - Comprehensive Test Suite', () => {
       // Architect approves
       result = await manager.addReview({
         repoName: REPO_NAME, featureSlug: FEATURE_SLUG, taskId: 'T01',
-        stakeholder: 'architect', decision: 'approve', notes: 'Architecture OK',
+        stakeholder: 'architect', decision: 'approve', notes: 'Architecture approved - patterns and technical approach are sound',
         additionalFields: { technologyRecommendations: ['React', 'Node'], designPatterns: ['MVC'] },
       });
       expect(result.newStatus).toBe('PendingUiUxExpert');
@@ -668,7 +659,7 @@ describe('All MCP Tools - Comprehensive Test Suite', () => {
       // UI/UX Expert approves
       result = await manager.addReview({
         repoName: REPO_NAME, featureSlug: FEATURE_SLUG, taskId: 'T01',
-        stakeholder: 'uiUxExpert', decision: 'approve', notes: 'Design approved',
+        stakeholder: 'uiUxExpert', decision: 'approve', notes: 'Design approved - usability and accessibility requirements are met',
         additionalFields: {
           usabilityFindings: 'Clean layout',
           accessibilityRequirements: ['WCAG 2.1 AA'],
@@ -680,7 +671,7 @@ describe('All MCP Tools - Comprehensive Test Suite', () => {
       // Security Officer approves
       result = await manager.addReview({
         repoName: REPO_NAME, featureSlug: FEATURE_SLUG, taskId: 'T01',
-        stakeholder: 'securityOfficer', decision: 'approve', notes: 'Security checks passed',
+        stakeholder: 'securityOfficer', decision: 'approve', notes: 'Security checks passed - all OWASP requirements verified and compliant',
         additionalFields: {
           securityRequirements: ['HTTPS required', 'Rate limiting'],
           complianceNotes: 'GDPR compliant',
@@ -691,10 +682,7 @@ describe('All MCP Tools - Comprehensive Test Suite', () => {
 
     test('should handle review on already-completed task', async () => {
       // Move task through full approval
-      await manager.addReview({ repoName: REPO_NAME, featureSlug: FEATURE_SLUG, taskId: 'T01', stakeholder: 'productDirector', decision: 'approve', notes: 'OK' });
-      await manager.addReview({ repoName: REPO_NAME, featureSlug: FEATURE_SLUG, taskId: 'T01', stakeholder: 'architect', decision: 'approve', notes: 'OK' });
-      await manager.addReview({ repoName: REPO_NAME, featureSlug: FEATURE_SLUG, taskId: 'T01', stakeholder: 'uiUxExpert', decision: 'approve', notes: 'OK' });
-      await manager.addReview({ repoName: REPO_NAME, featureSlug: FEATURE_SLUG, taskId: 'T01', stakeholder: 'securityOfficer', decision: 'approve', notes: 'OK' });
+      await approveAllStakeholders(manager, REPO_NAME, FEATURE_SLUG, 'T01');
 
       // Try to add another review
       const result = await manager.addReview({
@@ -735,7 +723,8 @@ describe('All MCP Tools - Comprehensive Test Suite', () => {
     test('should return architect after productDirector approval', async () => {
       await manager.addReview({
         repoName: REPO_NAME, featureSlug: FEATURE_SLUG, taskId: 'T01',
-        stakeholder: 'productDirector', decision: 'approve', notes: 'Approved',
+        stakeholder: 'productDirector', decision: 'approve', notes: 'Approved - all requirements verified and implementation looks correct',
+        additionalFields: { marketAnalysis: 'Market demand confirmed', competitorAnalysis: 'Competitor gap identified' },
       });
 
       const result = await manager.getNextStep({
@@ -749,10 +738,7 @@ describe('All MCP Tools - Comprehensive Test Suite', () => {
 
     test('should indicate completion for Done tasks', async () => {
       // Fully approve through all stakeholders
-      await manager.addReview({ repoName: REPO_NAME, featureSlug: FEATURE_SLUG, taskId: 'T01', stakeholder: 'productDirector', decision: 'approve', notes: 'OK' });
-      await manager.addReview({ repoName: REPO_NAME, featureSlug: FEATURE_SLUG, taskId: 'T01', stakeholder: 'architect', decision: 'approve', notes: 'OK' });
-      await manager.addReview({ repoName: REPO_NAME, featureSlug: FEATURE_SLUG, taskId: 'T01', stakeholder: 'uiUxExpert', decision: 'approve', notes: 'OK' });
-      await manager.addReview({ repoName: REPO_NAME, featureSlug: FEATURE_SLUG, taskId: 'T01', stakeholder: 'securityOfficer', decision: 'approve', notes: 'OK' });
+      await approveAllStakeholders(manager, REPO_NAME, FEATURE_SLUG, 'T01');
 
       // Transition through dev workflow to Done
       await manager.transitionTaskStatus({ repoName: REPO_NAME, featureSlug: FEATURE_SLUG, taskId: 'T01', fromStatus: 'ReadyForDevelopment', toStatus: 'ToDo', actor: 'system' });
@@ -787,10 +773,7 @@ describe('All MCP Tools - Comprehensive Test Suite', () => {
       await setupFullEnvironment(manager, dbHandler);
 
       // Approve through all stakeholders to reach ReadyForDevelopment
-      await manager.addReview({ repoName: REPO_NAME, featureSlug: FEATURE_SLUG, taskId: 'T01', stakeholder: 'productDirector', decision: 'approve', notes: 'OK' });
-      await manager.addReview({ repoName: REPO_NAME, featureSlug: FEATURE_SLUG, taskId: 'T01', stakeholder: 'architect', decision: 'approve', notes: 'OK' });
-      await manager.addReview({ repoName: REPO_NAME, featureSlug: FEATURE_SLUG, taskId: 'T01', stakeholder: 'uiUxExpert', decision: 'approve', notes: 'OK' });
-      await manager.addReview({ repoName: REPO_NAME, featureSlug: FEATURE_SLUG, taskId: 'T01', stakeholder: 'securityOfficer', decision: 'approve', notes: 'OK' });
+      await approveAllStakeholders(manager, REPO_NAME, FEATURE_SLUG, 'T01');
     });
 
     test('should transition ReadyForDevelopment -> ToDo', async () => {
@@ -1029,7 +1012,8 @@ describe('All MCP Tools - Comprehensive Test Suite', () => {
     test('should filter correctly after status transitions', async () => {
       await manager.addReview({
         repoName: REPO_NAME, featureSlug: FEATURE_SLUG, taskId: 'T01',
-        stakeholder: 'productDirector', decision: 'approve', notes: 'OK',
+        stakeholder: 'productDirector', decision: 'approve', notes: 'Approved - all requirements verified and implementation looks correct',
+        additionalFields: { marketAnalysis: 'Market demand confirmed', competitorAnalysis: 'Competitor gap identified' },
       });
 
       const pendingPD = await manager.getTasksByStatus({
@@ -1068,10 +1052,7 @@ describe('All MCP Tools - Comprehensive Test Suite', () => {
 
     test('should report all complete when all tasks are Done', async () => {
       // Move T01 through full workflow to Done
-      await manager.addReview({ repoName: REPO_NAME, featureSlug: FEATURE_SLUG, taskId: 'T01', stakeholder: 'productDirector', decision: 'approve', notes: 'OK' });
-      await manager.addReview({ repoName: REPO_NAME, featureSlug: FEATURE_SLUG, taskId: 'T01', stakeholder: 'architect', decision: 'approve', notes: 'OK' });
-      await manager.addReview({ repoName: REPO_NAME, featureSlug: FEATURE_SLUG, taskId: 'T01', stakeholder: 'uiUxExpert', decision: 'approve', notes: 'OK' });
-      await manager.addReview({ repoName: REPO_NAME, featureSlug: FEATURE_SLUG, taskId: 'T01', stakeholder: 'securityOfficer', decision: 'approve', notes: 'OK' });
+      await approveAllStakeholders(manager, REPO_NAME, FEATURE_SLUG, 'T01');
 
       await manager.transitionTaskStatus({ repoName: REPO_NAME, featureSlug: FEATURE_SLUG, taskId: 'T01', fromStatus: 'ReadyForDevelopment', toStatus: 'ToDo', actor: 'system' });
       await manager.transitionTaskStatus({ repoName: REPO_NAME, featureSlug: FEATURE_SLUG, taskId: 'T01', fromStatus: 'ToDo', toStatus: 'InProgress', actor: 'developer' });
@@ -1663,44 +1644,14 @@ describe('All MCP Tools - Comprehensive Test Suite', () => {
       expect(nextStep1.nextRole).toBe('productDirector');
 
       // Go through all approvals for T01
-      await manager.addReview({
-        repoName: 'my-project', featureSlug: 'smart-strangle-engine', taskId: 'T01',
-        stakeholder: 'productDirector', decision: 'approve', notes: 'Good fit for market',
-      });
-      await manager.addReview({
-        repoName: 'my-project', featureSlug: 'smart-strangle-engine', taskId: 'T01',
-        stakeholder: 'architect', decision: 'approve', notes: 'Architecture sound',
-      });
-      await manager.addReview({
-        repoName: 'my-project', featureSlug: 'smart-strangle-engine', taskId: 'T01',
-        stakeholder: 'uiUxExpert', decision: 'approve', notes: 'UX approved',
-      });
-      await manager.addReview({
-        repoName: 'my-project', featureSlug: 'smart-strangle-engine', taskId: 'T01',
-        stakeholder: 'securityOfficer', decision: 'approve', notes: 'Security passed',
-      });
+      await approveAllStakeholders(manager, 'my-project', 'smart-strangle-engine', 'T01');
 
       // Verify T01 is ReadyForDevelopment
       const t01Status = await manager.getTaskStatus('my-project', 'smart-strangle-engine', 'T01');
       expect(t01Status.status).toBe('ReadyForDevelopment');
 
       // Go through all approvals for T02
-      await manager.addReview({
-        repoName: 'my-project', featureSlug: 'smart-strangle-engine', taskId: 'T02',
-        stakeholder: 'productDirector', decision: 'approve', notes: 'OK',
-      });
-      await manager.addReview({
-        repoName: 'my-project', featureSlug: 'smart-strangle-engine', taskId: 'T02',
-        stakeholder: 'architect', decision: 'approve', notes: 'OK',
-      });
-      await manager.addReview({
-        repoName: 'my-project', featureSlug: 'smart-strangle-engine', taskId: 'T02',
-        stakeholder: 'uiUxExpert', decision: 'approve', notes: 'OK',
-      });
-      await manager.addReview({
-        repoName: 'my-project', featureSlug: 'smart-strangle-engine', taskId: 'T02',
-        stakeholder: 'securityOfficer', decision: 'approve', notes: 'OK',
-      });
+      await approveAllStakeholders(manager, 'my-project', 'smart-strangle-engine', 'T02');
 
       // Verify all tasks ReadyForDevelopment
       const tasksByStatus = await manager.getTasksByStatus({

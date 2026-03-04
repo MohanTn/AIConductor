@@ -22,10 +22,7 @@ describe('Multi-Repo Support', () => {
     manager = new AIConductor(testDbPath);
     dbHandler = manager['dbHandler'];
     
-    // Apply multi-repo migration
-    const migrationPath = path.join(process.cwd(), 'src', 'migrations', '001_add_multi_repo_support.sql');
-    const migrationSQL = fs.readFileSync(migrationPath, 'utf-8');
-    dbHandler['db'].exec(migrationSQL);
+    // Migration is applied automatically by DatabaseHandler constructor
   });
 
   afterEach(() => {

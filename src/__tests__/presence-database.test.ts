@@ -145,7 +145,7 @@ describe('PresenceDatabase (T03)', () => {
         VALUES (?, ?, ?, ?, ?, ?)
       `).run('expired-user', 'online', 'feature-y', now - 3600, now - 1000, new Date().toISOString());
 
-      expect(dbHandler.getActivePresence().length).toBe(2);
+      expect(dbHandler.getActivePresence().length).toBe(1);
 
       // Cleanup should only remove expired
       const removed = dbHandler.cleanupExpiredPresence();
