@@ -60,6 +60,20 @@ export class FeatureAPI extends BaseClient {
   }
 
   /**
+   * Reset all tasks in a feature to ReadyForDevelopment so the dev-workflow
+   * can be re-run after post-release fixes.
+   */
+  static async resetDevWorkflow(
+    repoName: string,
+    featureSlug: string
+  ): Promise<{ success: boolean; tasksReset: number }> {
+    return this.request(
+      `${this.apiBase}/features/${encodeURIComponent(repoName)}/${encodeURIComponent(featureSlug)}/reset-dev`,
+      { method: 'POST' }
+    );
+  }
+
+  /**
    * Delete a feature
    */
   static async deleteFeature(repoName: string, featureSlug: string): Promise<any> {

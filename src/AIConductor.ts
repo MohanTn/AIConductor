@@ -76,6 +76,7 @@ import {
   ValidateReviewCompletenessResult,
   GetSimilarTasksInput,
   GetSimilarTasksResult,
+  TaskStatus,
 } from './types.js';
 import { DatabaseHandler } from './DatabaseHandler.js';
 import { WorkflowValidator } from './WorkflowValidator.js';
@@ -172,6 +173,60 @@ export class AIConductor {
 
   async batchTransitionTasks(input: BatchTransitionTasksInput): Promise<BatchTransitionTasksResult> {
     return this.transitionService.batchTransitionTasks(input);
+  }
+
+  /**
+   * Reset all tasks in a feature to ReadyForDevelopment so the dev-workflow
+   * can be re-run after post-release fixes. Uses system actor for each group
+   * of tasks that share the same current status.
+   */
+  async resetDevWorkflow(
+    repoName: string,
+    featureSlug: string
+  ): Promise<{ success: boolean; tasksReset: number }> {
+    const summary = await this.getReviewSummary(repoName, featureSlug);
+    const tasks = summary.tasks || [];
+
+    if (tasks.length === 0) {
+      return { success: true, tasksReset: 0 };
+    }
+
+    // Group task IDs by their current status so we can batch-transition each group
+    const byStatus = new Map<TaskStatus, string[]>();
+    for (const task of tasks) {
+      if (task.status === 'ReadyForDevelopment') continue; // already at target
+      const group = byStatus.get(task.status) ?? [];
+      group.push(task.taskId);
+      byStatus.set(task.status, group);
+    }
+
+    let totalReset = 0;
+    for (const [fromStatus, taskIds] of byStatus) {
+      const result = await this.batchTransitionTasks({
+        repoName,
+        featureSlug,
+        taskIds,
+        fromStatus,
+        toStatus: 'ReadyForDevelopment',
+        actor: 'system',
+        notes: 'Reset by resetDevWorkflow — re-running dev pipeline',
+      });
+      totalReset += result.successCount ?? 0;
+    }
+
+    // Include tasks that were already at ReadyForDevelopment in the count
+    const alreadyReady = tasks.filter(t => t.status === 'ReadyForDevelopment').length;
+    const grandTotal = totalReset + alreadyReady;
+
+    console.log(JSON.stringify({
+      action: 'resetDevWorkflow',
+      repoName,
+      featureSlug,
+      tasksReset: grandTotal,
+      timestamp: new Date().toISOString(),
+    }));
+
+    return { success: true, tasksReset: grandTotal };
   }
 
   async batchUpdateAcceptanceCriteria(

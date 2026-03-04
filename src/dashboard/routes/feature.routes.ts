@@ -40,6 +40,41 @@ export function createFeatureRoutes(reviewManager: AIConductor): Router {
   }));
 
   /**
+   * POST /api/features/:repoName/:featureSlug/reset-dev
+   * Reset all tasks in a feature to ReadyForDevelopment so the dev-workflow
+   * can be re-run after post-release fixes.
+   */
+  router.post('/features/:repoName/:featureSlug/reset-dev', asyncHandler(async (req: Request, res: Response) => {
+    const repoName = req.params.repoName as string;
+    const featureSlug = req.params.featureSlug as string;
+
+    // Security: validate path params (alphanumeric + hyphens/underscores only, max 100 chars)
+    const slugPattern = /^[a-zA-Z0-9_-]{1,100}$/;
+    if (!slugPattern.test(repoName) || !slugPattern.test(featureSlug)) {
+      throw new ValidationError('Invalid characters in repo name or feature slug');
+    }
+
+    // 404 guard — verify feature exists before attempting bulk transition
+    const features = reviewManager.getAllFeatures(repoName);
+    const feature = features.find((f: any) => f.featureSlug === featureSlug);
+    if (!feature) {
+      throw new NotFoundError(`Feature '${featureSlug}' not found in repo '${repoName}'`);
+    }
+
+    const result = await reviewManager.resetDevWorkflow(repoName, featureSlug);
+
+    wsManager.broadcast({
+      type: 'task-status-changed',
+      action: 'reset-dev',
+      featureSlug,
+      repoName,
+      timestamp: Date.now(),
+    });
+
+    res.json({ success: true, tasksReset: result.tasksReset });
+  }));
+
+  /**
    * GET /api/features/:featureSlug/snapshot?repoName=<repo>
    * Compressed workflow snapshot: blocked tasks, next role, high-rework items, recommendations.
    * Used by the WhatNextBanner component in the dashboard.

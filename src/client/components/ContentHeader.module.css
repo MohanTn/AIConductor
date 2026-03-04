@@ -100,6 +100,24 @@
   gap: 8px;
 }
 
+.resetDevBtn {
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid var(--warning-border, #d4a017);
+  border-radius: 3px;
+  background: var(--warning-bg, rgba(212, 160, 23, 0.08));
+  color: var(--warning-text, #a37c00);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+
+.resetDevBtn:hover {
+  background: var(--warning-bg-hover, rgba(212, 160, 23, 0.15));
+  border-color: var(--warning-border-hover, #b8880f);
+}
+
 .searchInput {
   padding: 5px 10px;
   border: 1px solid var(--border);
