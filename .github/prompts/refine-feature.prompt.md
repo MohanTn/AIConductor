@@ -252,17 +252,48 @@ Ask the user to clarify:
 # Step 6 - Task Breakdown and Generation (Informed by Clarifications)
 **Use clarifications from Step 3, AC from Step 4, and test scenarios from Step 5 to design task breakdown.**
 
-- Break the feature into 5-8 discrete, actionable tasks
+## ⚠️ HARD RULES FOR TASK BREAKDOWN
+
+### Rule 1 — No Deferred Work
+**NEVER defer functionality to a future phase or ticket.** Every piece of the feature — database schema, API endpoints, frontend components, wiring, and navigation — MUST be included in this task list. If something is needed for the feature to work end-to-end, it must have a task.
+
+### Rule 2 — Layer-Based Decomposition (Required)
+Tasks MUST be decomposed by architectural layer. Every feature must have tasks covering **all applicable layers**:
+
+| Layer | What it covers | Example task title |
+|---|---|---|
+| **Database / Data Persistence** | Schema changes, migrations, indexes, seed data | "Add `user_preferences` table and migration" |
+| **Backend / Business Logic** | Services, domain logic, validation, error handling | "Implement preference update service with validation" |
+| **API / Endpoints** | REST/GraphQL routes, request/response contracts, auth middleware | "Add PATCH /api/users/:id/preferences endpoint" |
+| **Frontend Components** | UI components, forms, state, loading/error states | "Build PreferencesForm component with validation" |
+| **Frontend–Backend Integration** | API client wiring, data mapping, error handling in UI | "Wire PreferencesForm to PATCH preferences API" |
+| **Navigation & Entry Points** | Routes, sidebar links, breadcrumbs, deep links from main page | "Add Preferences link to Settings sidebar and route /settings/preferences" |
+
+> If a layer does not apply (e.g., a pure backend feature has no UI), explicitly note why it is skipped. Do NOT silently omit it.
+
+### Rule 3 — No Minimum or Maximum Task Count
+The task list has **no upper limit**. Use as many tasks as needed to fully implement the feature across all layers. Prefer more smaller focused tasks over fewer large ones. The only constraint: each task must be independently implementable and testable.
+
+---
+
 - **Consider clarifications when designing tasks:**
   - Prioritize based on timeline (Q4) and dependencies (Q15)
   - Design for target personas/users (Q1)
   - Allocate tasks based on team skills (Q17)
   - Create separate tasks for security/compliance if needed (Q11-Q13)
   - Plan integration work separately (Q6)
+- **Layer ordering** — tasks should follow the natural dependency chain:
+  1. Database/schema first (foundation)
+  2. Backend services and business logic
+  3. API endpoints (depend on services)
+  4. Frontend components (can begin in parallel with API)
+  5. Frontend–Backend integration wiring
+  6. Navigation and entry points from the main page last
 - For each task:
   - Assign unique task identifier (T01, T02, etc.)
   - Set initial status to "PendingProductDirector"
   - Define clear task title and description
+  - **Tag the layer**: Start the task description with `[Layer: Database | Backend | API | Frontend | Integration | Navigation]`
   - **Link to clarifications**: Reference the relevant user answers in task descriptions
   - Map relevant acceptance criteria to the task
   - Map relevant test scenarios to the task
@@ -281,6 +312,7 @@ Ask the user to clarify:
   - Has clear boundaries
   - Includes all necessary acceptance criteria
   - Maps to specific test scenarios
+- **After creating all tasks, do a layer coverage check**: Confirm at least one task covers each applicable layer. If any layer is missing, add tasks before proceeding.
 
 # Step 6.5 - Validate Task Dependencies & Execution Order [NEW - Rec 4]
 - Call `mcp__aiconductor__get_task_execution_plan` to analyze dependencies
