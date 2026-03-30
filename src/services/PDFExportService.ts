@@ -137,7 +137,7 @@ export class PDFExportService {
     const tasks = taskFile.tasks;
 
     // Aggregate architect and security data across all tasks
-    let architectData: {
+    const architectData: {
       notes: string;
       technologyRecommendations: string[];
       designPatterns: string[];
@@ -147,7 +147,7 @@ export class PDFExportService {
       authDetails?: string;
     } = { notes: '', technologyRecommendations: [], designPatterns: [] };
 
-    let securityData: {
+    const securityData: {
       securityRequirements: string[];
       complianceNotes: string;
     } = { securityRequirements: [], complianceNotes: '' };
