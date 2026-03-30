@@ -143,8 +143,34 @@ Add detailed analysis including:
 |---|---|---|
 | \`technologyRecommendations\` | \`string[]\` | Array — one entry per recommended tool/library |
 | \`designPatterns\` | \`string[]\` | Array — one entry per applicable design pattern |
+| \`flowDiagram\` | \`string\` | Mermaid \`flowchart TD\` syntax showing system architecture/component interactions |
+| \`sequentialCallsDiagram\` | \`string\` | Mermaid \`sequenceDiagram\` syntax showing step-by-step service call sequences |
+| \`apiContracts\` | \`string\` | Structured text listing API endpoints: method, path, request body, response body, status codes |
+| \`authDetails\` | \`string\` | **Mechanism description ONLY** — e.g. "Bearer JWT validated via /auth/verify using RS256". NEVER include actual credentials, API keys, client secrets, private keys, or passwords |
 
-> These fields are stored permanently in the database. Do NOT include PII, credentials, or sensitive internal data.`,
+### flowDiagram example (use this exact Mermaid syntax format):
+\`\`\`
+flowchart TD
+  Client-->|HTTP Request|API
+  API-->|Query|DB[(Database)]
+  DB-->|Result|API
+  API-->|Response|Client
+\`\`\`
+
+### sequentialCallsDiagram example:
+\`\`\`
+sequenceDiagram
+  participant C as Client
+  participant A as API
+  participant D as Database
+  C->>A: POST /api/resource
+  A->>D: INSERT INTO resources
+  D-->>A: row inserted
+  A-->>C: 201 Created
+\`\`\`
+
+> These fields are stored permanently in the database and may be exported as a shareable Architecture PDF.
+> Do NOT include PII, credentials, API keys, or sensitive internal data. The authDetails field is for mechanism descriptions only.`,
     focusAreas: [
       'Industry-proven implementation patterns',
       'Technology selection and version strategy',
@@ -156,7 +182,7 @@ Add detailed analysis including:
       'Production lessons learned and common pitfalls',
     ],
     researchInstructions: 'Conduct systematic DuckDuckGo searches across four areas: (1) Implementation patterns - search for proven approaches, pitfalls, architecture patterns, (2) Technology evaluation - search for framework comparisons, benchmarks, community adoption, examples, (3) Design patterns - search for pattern implementations, tradeoffs, real-world use, (4) Scalability/Integration - search for database design, API design, caching, distributed systems. For each search, prioritize: official documentation, established tech blogs, community discussions, benchmarks, and production case studies. Document at least 15-20 quality sources with key findings. Evaluate solutions against real production requirements.',
-    requiredOutputFields: ['technologyRecommendations', 'designPatterns'],
+    requiredOutputFields: ['technologyRecommendations', 'designPatterns', 'flowDiagram', 'sequentialCallsDiagram', 'apiContracts', 'authDetails'],
     phase: 'review',
   },
 

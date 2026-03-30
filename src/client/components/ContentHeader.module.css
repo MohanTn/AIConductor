@@ -100,6 +100,43 @@
   gap: 8px;
 }
 
+.exportBtn {
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid var(--primary, #007acc);
+  border-radius: 3px;
+  background: var(--primary-bg, rgba(0, 122, 204, 0.08));
+  color: var(--primary, #007acc);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, opacity 0.15s;
+  white-space: nowrap;
+}
+
+.exportBtn:hover:not(:disabled) {
+  background: var(--primary-bg-hover, rgba(0, 122, 204, 0.15));
+  border-color: var(--primary-hover, #0069b0);
+}
+
+.exportBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.exportBtn:focus-visible {
+  outline: 2px solid var(--primary, #007acc);
+  outline-offset: 2px;
+}
+
+.exportError {
+  font-size: 11px;
+  color: var(--error, #dc2626);
+  white-space: nowrap;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .resetDevBtn {
   padding: 5px 10px;
   font-size: 12px;
