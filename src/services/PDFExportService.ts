@@ -26,7 +26,8 @@ const ROLE_LABELS: Record<string, string> = {
 async function renderMermaidToSvg(source: string): Promise<string | null> {
   try {
     const { createMermaidRenderer } = await import('mermaid-isomorphic');
-    const renderer = createMermaidRenderer();
+    const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
+    const renderer = createMermaidRenderer(executablePath ? { launchOptions: { executablePath } } : {});
     const results = await renderer([source]);
     const result = results[0];
     if (result.status === 'fulfilled') {
