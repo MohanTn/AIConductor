@@ -2,7 +2,8 @@
  * PDFExportService — generates PRD and Architecture PDFs from stored feature data.
  *
  * Uses @react-pdf/renderer for server-side PDF generation.
- * Mermaid diagrams are rendered as source text (no browser/Playwright dependency).
+ * Mermaid diagrams are rendered to SVG via mermaid-isomorphic (playwright-core + system Chromium).
+ * Falls back to displaying Mermaid source text when Chromium is unavailable.
  */
 import React from 'react';
 import { renderToBuffer } from '@react-pdf/renderer';
@@ -19,12 +20,37 @@ const ROLE_LABELS: Record<string, string> = {
 };
 
 /**
- * Build a DiagramField from a raw Mermaid string.
- * Always returns mermaid source (no SVG rendering — avoids Playwright dependency).
+ * Render a Mermaid diagram source string to an SVG string using mermaid-isomorphic.
+ * Returns null and logs a warning if rendering fails (e.g. Chromium not available).
  */
-function buildDiagramField(source: string | undefined, caption: string): DiagramField {
+async function renderMermaidToSvg(source: string): Promise<string | null> {
+  try {
+    const { createMermaidRenderer } = await import('mermaid-isomorphic');
+    const renderer = createMermaidRenderer();
+    const results = await renderer([source]);
+    const result = results[0];
+    if (result.status === 'fulfilled') {
+      return result.value.svg;
+    }
+    console.warn('[PDFExportService] Mermaid render rejected:', result.reason);
+    return null;
+  } catch (err) {
+    console.warn('[PDFExportService] Mermaid render unavailable (Chromium not installed?):', err instanceof Error ? err.message : String(err));
+    return null;
+  }
+}
+
+/**
+ * Build a DiagramField from a raw Mermaid string.
+ * Attempts SVG rendering via mermaid-isomorphic; falls back to source text display.
+ */
+async function buildDiagramField(source: string | undefined, caption: string): Promise<DiagramField> {
   if (!source || !source.trim()) {
     return { type: 'pending', caption };
+  }
+  const svg = await renderMermaidToSvg(source);
+  if (svg) {
+    return { type: 'svg', svg, caption };
   }
   return { type: 'mermaid', source, caption };
 }
@@ -183,6 +209,11 @@ export class PDFExportService {
       }
     }
 
+    const [flowDiagram, sequentialCallsDiagram] = await Promise.all([
+      buildDiagramField(architectData.flowDiagram, 'Figure 1: System Architecture Flow'),
+      buildDiagramField(architectData.sequentialCallsDiagram, 'Figure 2: Sequential Calls'),
+    ]);
+
     const props: ArchitectureDocumentProps = {
       featureName: feature.featureName || featureSlug,
       description: (feature.description || '').slice(0, 10000),
@@ -190,8 +221,8 @@ export class PDFExportService {
       exportDate,
       technologyRecommendations: architectData.technologyRecommendations,
       designPatterns: architectData.designPatterns,
-      flowDiagram: buildDiagramField(architectData.flowDiagram, 'Figure 1: System Architecture Flow'),
-      sequentialCallsDiagram: buildDiagramField(architectData.sequentialCallsDiagram, 'Figure 2: Sequential Calls'),
+      flowDiagram,
+      sequentialCallsDiagram,
       apiContracts: (architectData.apiContracts || '').slice(0, 10000),
       authDetails: (architectData.authDetails || '').slice(0, 10000),
       securityRequirements: securityData.securityRequirements,
