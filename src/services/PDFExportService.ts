@@ -20,20 +20,21 @@ const ROLE_LABELS: Record<string, string> = {
 };
 
 /**
- * Render a Mermaid diagram source string to an SVG string using mermaid-isomorphic.
- * Returns null and logs a warning if rendering fails (e.g. Chromium not available).
+ * Render a Mermaid diagram source string to a PNG buffer using mermaid-isomorphic.
+ * Uses Playwright with system Chromium (PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH) when available.
+ * Returns null and logs a warning if rendering fails (e.g. Chromium not installed).
  */
-async function renderMermaidToSvg(source: string): Promise<string | null> {
+async function renderMermaidToPng(source: string): Promise<Buffer | null> {
   try {
     const { createMermaidRenderer } = await import('mermaid-isomorphic');
     const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
     const renderer = createMermaidRenderer(executablePath ? { launchOptions: { executablePath } } : {});
-    const results = await renderer([source]);
+    const results = await renderer([source], { screenshot: true });
     const result = results[0];
-    if (result.status === 'fulfilled') {
-      return result.value.svg;
+    if (result.status === 'fulfilled' && result.value.screenshot) {
+      return result.value.screenshot;
     }
-    console.warn('[PDFExportService] Mermaid render rejected:', result.reason);
+    console.warn('[PDFExportService] Mermaid render rejected or no screenshot:', result.status === 'rejected' ? result.reason : 'no screenshot buffer');
     return null;
   } catch (err) {
     console.warn('[PDFExportService] Mermaid render unavailable (Chromium not installed?):', err instanceof Error ? err.message : String(err));
@@ -43,15 +44,15 @@ async function renderMermaidToSvg(source: string): Promise<string | null> {
 
 /**
  * Build a DiagramField from a raw Mermaid string.
- * Attempts SVG rendering via mermaid-isomorphic; falls back to source text display.
+ * Attempts PNG rendering via mermaid-isomorphic; falls back to source text display.
  */
 async function buildDiagramField(source: string | undefined, caption: string): Promise<DiagramField> {
   if (!source || !source.trim()) {
     return { type: 'pending', caption };
   }
-  const svg = await renderMermaidToSvg(source);
-  if (svg) {
-    return { type: 'svg', svg, caption };
+  const png = await renderMermaidToPng(source);
+  if (png) {
+    return { type: 'png', png: png.toString('base64'), caption };
   }
   return { type: 'mermaid', source, caption };
 }
