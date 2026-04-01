@@ -2,7 +2,7 @@
  * Feature API client
  */
 import { BaseClient } from './base.js';
-import { Feature } from '../types/index.js';
+import { Feature, FeatureArtefact } from '../types/index.js';
 
 export class FeatureAPI extends BaseClient {
   /**
@@ -81,5 +81,15 @@ export class FeatureAPI extends BaseClient {
       `${this.apiBase}/features/${encodeURIComponent(featureSlug)}?repoName=${encodeURIComponent(repoName)}`,
       { method: 'DELETE' }
     );
+  }
+
+  /**
+   * Get supplementary artefacts for a feature
+   */
+  static async getArtefacts(repoName: string, featureSlug: string): Promise<FeatureArtefact[]> {
+    const response = await this.request<{ success: boolean; artefacts: FeatureArtefact[] }>(
+      `${this.apiBase}/features/${encodeURIComponent(featureSlug)}/artefacts?repoName=${encodeURIComponent(repoName)}`
+    );
+    return response.artefacts || [];
   }
 }

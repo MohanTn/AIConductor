@@ -575,6 +575,28 @@ export function createToolHandlers(
       return wrapResult(result);
     }],
 
+    // ── Feature Artefacts ─────────────────────────────────────────────────
+
+    ['add_feature_artefact', async (args) => {
+      const result = reviewManager.addFeatureArtefact(
+        requireString(args, 'repoName'),
+        requireString(args, 'featureSlug'),
+        requireString(args, 'artefactType'),
+        requireString(args, 'title'),
+        requireString(args, 'content'),
+      );
+      return wrapResult({ success: true, ...result });
+    }],
+
+    ['get_feature_artefacts', async (args) => {
+      const artefacts = reviewManager.getFeatureArtefacts(
+        requireString(args, 'repoName'),
+        requireString(args, 'featureSlug'),
+        optionalString(args, 'artefactType'),
+      );
+      return wrapResult({ success: true, artefacts });
+    }],
+
   ]);
 
   return handlers;

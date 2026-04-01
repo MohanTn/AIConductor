@@ -18,6 +18,7 @@ import { createRefinementRoutes } from './dashboard/routes/refinement.routes.js'
 import { createSettingsRoutes } from './dashboard/routes/settings.routes.js';
 import { createQueueRoutes } from './dashboard/routes/queue.routes.js';
 import { createExportRoutes } from './dashboard/routes/export.routes.js';
+import { createArtefactRoutes } from './dashboard/routes/artefact.routes.js';
 import { errorMiddleware } from './dashboard/middleware/errorHandler.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -49,6 +50,7 @@ export function startDashboard(port: number = 5111) {
   app.use('/api', createSettingsRoutes(reviewManager));
   app.use('/api', createQueueRoutes(reviewManager));
   app.use('/api', createExportRoutes(reviewManager));
+  app.use('/api', createArtefactRoutes(reviewManager));
 
   /**
    * Serve the dashboard HTML (for SPA routing)

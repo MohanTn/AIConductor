@@ -89,6 +89,16 @@ export interface Attachment {
   analysisSummary: string;
 }
 
+export interface FeatureArtefact {
+  id: number;
+  repoName: string;
+  featureSlug: string;
+  artefactType: 'diagram' | 'api_contract' | 'data_model' | 'note';
+  title: string;
+  content: string;
+  createdAt: string;
+}
+
 export interface Feature {
   featureSlug: string;
   title: string;
@@ -104,6 +114,7 @@ export interface Feature {
   clarifications?: Clarification[];
   refinementSteps?: RefinementStep[];
   attachments?: Attachment[];
+  artefacts?: FeatureArtefact[];
 }
 
 export interface Repo {

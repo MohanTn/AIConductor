@@ -28,6 +28,12 @@ export interface PRDStakeholderReview {
   notes: string;
 }
 
+export interface PRDArtefact {
+  title: string;
+  content: string;
+  type: 'note' | 'api_contract';
+}
+
 export interface PRDDocumentProps {
   featureName: string;
   description: string;
@@ -37,6 +43,7 @@ export interface PRDDocumentProps {
   testScenarios: PRDTestScenario[];
   clarifications: PRDClarification[];
   stakeholderReviews: PRDStakeholderReview[];
+  supplementaryArtefacts?: PRDArtefact[];
 }
 
 const priorityBadgeStyle = (priority: string) => {
@@ -78,6 +85,7 @@ export const PRDDocument: React.FC<PRDDocumentProps> = ({
   testScenarios,
   clarifications,
   stakeholderReviews,
+  supplementaryArtefacts = [],
 }) => {
   const styles = StyleSheet.create({
     acIdCol: { width: '10%' },
@@ -215,6 +223,23 @@ export const PRDDocument: React.FC<PRDDocumentProps> = ({
               )}
             </View>
           ))
+        )}
+
+        {/* Supplementary Notes */}
+        {supplementaryArtefacts.length > 0 && (
+          <>
+            <Text style={pdfStyles.sectionTitle}>
+              Supplementary Notes ({supplementaryArtefacts.length})
+            </Text>
+            {supplementaryArtefacts.map((artefact, i) => (
+              <View key={i} style={pdfStyles.qaItem}>
+                <Text style={pdfStyles.qaQuestion}>{artefact.title}</Text>
+                <View style={pdfStyles.codeBlock}>
+                  <Text style={pdfStyles.codeText}>{truncate(artefact.content, 10000)}</Text>
+                </View>
+              </View>
+            ))}
+          </>
         )}
 
         {/* Footer */}

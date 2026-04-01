@@ -513,4 +513,41 @@ export class AIConductor {
   addAttachmentAnalysisRecord(repoName: string, featureSlug: string, attachmentName: string, attachmentType: string, analysisSummary: string, filePath?: string, fileUrl?: string, extractedData?: Record<string, any>): number {
     return this.dbHandler.addAttachmentAnalysis(repoName, featureSlug, attachmentName, attachmentType, analysisSummary, filePath, fileUrl, extractedData);
   }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Feature Artefacts (post-refinement supplementary content)
+  // ─────────────────────────────────────────────────────────────────────
+
+  /**
+   * Add a supplementary artefact to a feature.
+   * Validates artefactType allowlist and enforces content/title size limits.
+   */
+  addFeatureArtefact(
+    repoName: string,
+    featureSlug: string,
+    artefactType: string,
+    title: string,
+    content: string
+  ): { artefactId: number } {
+    const ALLOWED_TYPES = ['diagram', 'api_contract', 'data_model', 'note'] as const;
+    if (!ALLOWED_TYPES.includes(artefactType as any)) {
+      throw new Error(`Invalid artefact type '${artefactType}'. Must be one of: ${ALLOWED_TYPES.join(', ')}`);
+    }
+    if (title.length > 500) {
+      throw new Error('Artefact title must not exceed 500 characters');
+    }
+    if (content.length > 100000) {
+      throw new Error('Artefact content must not exceed 100,000 characters (100 KB)');
+    }
+    const artefactId = this.dbHandler.addFeatureArtefact(repoName, featureSlug, artefactType, title, content);
+    return { artefactId };
+  }
+
+  getFeatureArtefacts(repoName: string, featureSlug: string, artefactType?: string) {
+    return this.dbHandler.getFeatureArtefacts(repoName, featureSlug, artefactType);
+  }
+
+  deleteFeatureArtefact(repoName: string, featureSlug: string, artefactId: number): boolean {
+    return this.dbHandler.deleteFeatureArtefact(repoName, featureSlug, artefactId);
+  }
 }

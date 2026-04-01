@@ -1098,5 +1098,52 @@ export const TOOLS = [
       required: ['repoName', 'featureSlug', 'taskId'],
     },
   },
+  {
+    name: 'add_feature_artefact',
+    description:
+      'Add a supplementary artefact (Mermaid diagram, API contract, data model, or free-form note) to a feature. ' +
+      'Can be called after refinement is complete to enrich the feature spec as a living document. ' +
+      'Do NOT include credentials, API keys, or secrets in content fields.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repoName: { type: 'string', description: 'Repository name' },
+        featureSlug: { type: 'string', description: 'Feature slug name' },
+        artefactType: {
+          type: 'string',
+          enum: ['diagram', 'api_contract', 'data_model', 'note'],
+          description: 'Type of artefact: diagram (Mermaid source), api_contract (OpenAPI/JSON), data_model (schema definition), note (free-form text)',
+        },
+        title: {
+          type: 'string',
+          description: 'Short descriptive title for this artefact (max 500 chars)',
+          maxLength: 500,
+        },
+        content: {
+          type: 'string',
+          description: 'The artefact content — Mermaid source, API spec, schema definition, or notes (max 100,000 chars)',
+          maxLength: 100000,
+        },
+      },
+      required: ['repoName', 'featureSlug', 'artefactType', 'title', 'content'],
+    },
+  },
+  {
+    name: 'get_feature_artefacts',
+    description: 'Get supplementary artefacts stored for a feature. Optionally filter by type.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repoName: { type: 'string', description: 'Repository name' },
+        featureSlug: { type: 'string', description: 'Feature slug name' },
+        artefactType: {
+          type: 'string',
+          enum: ['diagram', 'api_contract', 'data_model', 'note'],
+          description: 'Optional: filter by artefact type',
+        },
+      },
+      required: ['repoName', 'featureSlug'],
+    },
+  },
 ];
 
