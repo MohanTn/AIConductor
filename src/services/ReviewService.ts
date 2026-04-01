@@ -121,6 +121,10 @@ export class ReviewService extends ServiceBase {
           ...reviewData,
           technologyRecommendations: input.additionalFields?.technologyRecommendations,
           designPatterns: input.additionalFields?.designPatterns,
+          flowDiagram: input.additionalFields?.flowDiagram,
+          sequentialCallsDiagram: input.additionalFields?.sequentialCallsDiagram,
+          apiContracts: input.additionalFields?.apiContracts,
+          authDetails: input.additionalFields?.authDetails,
         };
       } else if (input.stakeholder === 'uiUxExpert') {
         task.stakeholderReview.uiUxExpert = {

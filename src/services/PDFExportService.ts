@@ -2,7 +2,8 @@
  * PDFExportService — generates PRD and Architecture PDFs from stored feature data.
  *
  * Uses @react-pdf/renderer for server-side PDF generation.
- * Mermaid diagrams are rendered as source text (no browser/Playwright dependency).
+ * Mermaid diagrams are rendered to SVG via mermaid-isomorphic (playwright-core + system Chromium).
+ * Falls back to displaying Mermaid source text when Chromium is unavailable.
  */
 import React from 'react';
 import { renderToBuffer } from '@react-pdf/renderer';
@@ -19,12 +20,39 @@ const ROLE_LABELS: Record<string, string> = {
 };
 
 /**
- * Build a DiagramField from a raw Mermaid string.
- * Always returns mermaid source (no SVG rendering — avoids Playwright dependency).
+ * Render a Mermaid diagram source string to a PNG buffer using mermaid-isomorphic.
+ * Uses Playwright with system Chromium (PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH) when available.
+ * Returns null and logs a warning if rendering fails (e.g. Chromium not installed).
  */
-function buildDiagramField(source: string | undefined, caption: string): DiagramField {
+async function renderMermaidToPng(source: string): Promise<Buffer | null> {
+  try {
+    const { createMermaidRenderer } = await import('mermaid-isomorphic');
+    const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
+    const renderer = createMermaidRenderer(executablePath ? { launchOptions: { executablePath } } : {});
+    const results = await renderer([source], { screenshot: true });
+    const result = results[0];
+    if (result.status === 'fulfilled' && result.value.screenshot) {
+      return result.value.screenshot;
+    }
+    console.warn('[PDFExportService] Mermaid render rejected or no screenshot:', result.status === 'rejected' ? result.reason : 'no screenshot buffer');
+    return null;
+  } catch (err) {
+    console.warn('[PDFExportService] Mermaid render unavailable (Chromium not installed?):', err instanceof Error ? err.message : String(err));
+    return null;
+  }
+}
+
+/**
+ * Build a DiagramField from a raw Mermaid string.
+ * Attempts PNG rendering via mermaid-isomorphic; falls back to source text display.
+ */
+async function buildDiagramField(source: string | undefined, caption: string): Promise<DiagramField> {
   if (!source || !source.trim()) {
     return { type: 'pending', caption };
+  }
+  const png = await renderMermaidToPng(source);
+  if (png) {
+    return { type: 'png', png: png.toString('base64'), caption };
   }
   return { type: 'mermaid', source, caption };
 }
@@ -190,11 +218,10 @@ export class PDFExportService {
       }
     }
 
-    // Fetch supplementary artefacts — diagrams, api_contracts, and data_models go into Architecture
-    const allArtefacts = this.db.getFeatureArtefacts(repoName, featureSlug);
-    const archArtefacts: ArchArtefact[] = allArtefacts
-      .filter(a => a.artefactType === 'diagram' || a.artefactType === 'api_contract' || a.artefactType === 'data_model')
-      .map(a => ({ title: a.title.slice(0, 200), content: a.content.slice(0, 10000), type: a.artefactType as ArchArtefact['type'] }));
+    const [flowDiagram, sequentialCallsDiagram] = await Promise.all([
+      buildDiagramField(architectData.flowDiagram, 'Figure 1: System Architecture Flow'),
+      buildDiagramField(architectData.sequentialCallsDiagram, 'Figure 2: Sequential Calls'),
+    ]);
 
     const props: ArchitectureDocumentProps = {
       featureName: feature.featureName || featureSlug,
@@ -203,8 +230,8 @@ export class PDFExportService {
       exportDate,
       technologyRecommendations: architectData.technologyRecommendations,
       designPatterns: architectData.designPatterns,
-      flowDiagram: buildDiagramField(architectData.flowDiagram, 'Figure 1: System Architecture Flow'),
-      sequentialCallsDiagram: buildDiagramField(architectData.sequentialCallsDiagram, 'Figure 2: Sequential Calls'),
+      flowDiagram,
+      sequentialCallsDiagram,
       apiContracts: (architectData.apiContracts || '').slice(0, 10000),
       authDetails: (architectData.authDetails || '').slice(0, 10000),
       securityRequirements: securityData.securityRequirements,

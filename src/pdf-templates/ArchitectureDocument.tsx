@@ -4,9 +4,10 @@ import { pdfStyles } from './pdfStyles.js';
 
 // Discriminated union for diagram field rendering
 type SvgDiagram = { type: 'svg'; svg: string; caption: string };
+type PngDiagram = { type: 'png'; png: string; caption: string }; // base64-encoded PNG
 type MermaidSourceDiagram = { type: 'mermaid'; source: string; caption: string };
 type PendingDiagram = { type: 'pending'; caption: string };
-export type DiagramField = SvgDiagram | MermaidSourceDiagram | PendingDiagram;
+export type DiagramField = SvgDiagram | PngDiagram | MermaidSourceDiagram | PendingDiagram;
 
 export interface ArchArtefact {
   title: string;
@@ -35,6 +36,16 @@ const truncate = (str: string, max = 10000): string =>
   str.length > max ? str.slice(0, max) + ' … [truncated]' : str;
 
 const DiagramSection: React.FC<{ diagram: DiagramField }> = ({ diagram }) => {
+  if (diagram.type === 'png') {
+    const dataUri = `data:image/png;base64,${diagram.png}`;
+    return (
+      <View style={pdfStyles.diagramContainer}>
+        <Image src={dataUri} style={{ maxWidth: '100%', maxHeight: 300 }} />
+        <Text style={pdfStyles.diagramCaption}>{diagram.caption}</Text>
+      </View>
+    );
+  }
+
   if (diagram.type === 'svg') {
     const dataUri = `data:image/svg+xml;base64,${Buffer.from(diagram.svg).toString('base64')}`;
     return (
