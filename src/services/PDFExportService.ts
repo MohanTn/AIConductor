@@ -223,6 +223,12 @@ export class PDFExportService {
       buildDiagramField(architectData.sequentialCallsDiagram, 'Figure 2: Sequential Calls'),
     ]);
 
+    // Fetch supplementary artefacts — diagrams, api_contracts, and data_models go into Architecture
+    const allArtefacts = this.db.getFeatureArtefacts(repoName, featureSlug);
+    const archArtefacts: ArchArtefact[] = allArtefacts
+      .filter(a => a.artefactType === 'diagram' || a.artefactType === 'api_contract' || a.artefactType === 'data_model')
+      .map(a => ({ title: a.title.slice(0, 200), content: a.content.slice(0, 10000), type: a.artefactType as ArchArtefact['type'] }));
+
     const props: ArchitectureDocumentProps = {
       featureName: feature.featureName || featureSlug,
       description: (feature.description || '').slice(0, 10000),

@@ -62,7 +62,8 @@
       "mcp__aiconductor-mcp__get_feature",
       "WebSearch",
       "Bash(timeout 15 npm start:*)",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(git branch:*)"
     ]
   },
   "spinnerTipsEnabled": false,
