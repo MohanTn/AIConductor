@@ -34,7 +34,7 @@ describe('Dev Queue System', () => {
       process.cwd(),
       `test-dev-queue-${Date.now()}-${Math.random().toString(36).slice(2)}.db`,
     );
-    manager = new AIConductor(testDbPath);
+    manager = new AIConductor(undefined, testDbPath);
     dbHandler = (manager as any).dbHandler as DatabaseHandler;
   });
 

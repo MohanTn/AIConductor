@@ -34,7 +34,7 @@ describe('Dashboard API Logic Tests (T01)', () => {
       process.cwd(),
       `test-dashboard-api-${Date.now()}-${Math.random().toString(36).slice(2)}.db`
     );
-    manager = new AIConductor(testDbPath);
+    manager = new AIConductor(undefined, testDbPath);
     dbHandler = (manager as any).dbHandler as DatabaseHandler;
 
     // Migration is applied automatically by DatabaseHandler constructor

@@ -19,16 +19,21 @@ describe('Multi-Repo Support', () => {
     testDbPath = path.join(process.cwd(), `test-multirepo-${Date.now()}-${Math.random()}.db`);
     
     // Create new manager with test database
-    manager = new AIConductor(testDbPath);
+    manager = new AIConductor(undefined, testDbPath);
     dbHandler = manager['dbHandler'];
-    
+
     // Migration is applied automatically by DatabaseHandler constructor
   });
 
   afterEach(() => {
-    // Close database connections
+    // Close database connections and remove test artifact
     try {
       dbHandler.close();
+    } catch (e) {
+      // Ignore errors
+    }
+    try {
+      fs.removeSync(testDbPath);
     } catch (e) {
       // Ignore errors
     }

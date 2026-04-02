@@ -91,7 +91,7 @@ describe('All MCP Tools - Comprehensive Test Suite', () => {
 
   beforeEach(() => {
     testDbPath = path.join(process.cwd(), `test-all-tools-${Date.now()}-${Math.random().toString(36).slice(2)}.db`);
-    manager = new AIConductor(testDbPath);
+    manager = new AIConductor(undefined, testDbPath);
     dbHandler = (manager as any).dbHandler as DatabaseHandler;
 
     // Migration is applied automatically by DatabaseHandler constructor

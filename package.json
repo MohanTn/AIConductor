@@ -17,6 +17,7 @@
     "dashboard": "node dist/dashboard.js",
     "migrate": "npm run build && node dist/migrate.js",
     "test": "jest",
+    "test:clean": "bash scripts/clean-test-artifacts.sh",
     "lint": "eslint src --ext .ts",
     "prepare": "npm run build"
   },
