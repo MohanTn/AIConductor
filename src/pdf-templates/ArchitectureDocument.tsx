@@ -9,6 +9,12 @@ type MermaidSourceDiagram = { type: 'mermaid'; source: string; caption: string }
 type PendingDiagram = { type: 'pending'; caption: string };
 export type DiagramField = SvgDiagram | PngDiagram | MermaidSourceDiagram | PendingDiagram;
 
+export interface ArchArtefact {
+  title: string;
+  content: string;
+  type: 'diagram' | 'api_contract' | 'data_model';
+}
+
 export interface ArchitectureDocumentProps {
   featureName: string;
   description: string;
@@ -23,6 +29,7 @@ export interface ArchitectureDocumentProps {
   securityRequirements: string[];
   complianceNotes: string;
   architectNotes: string;
+  supplementaryArtefacts?: ArchArtefact[];
 }
 
 const truncate = (str: string, max = 10000): string =>
@@ -82,6 +89,7 @@ export const ArchitectureDocument: React.FC<ArchitectureDocumentProps> = ({
   securityRequirements,
   complianceNotes,
   architectNotes,
+  supplementaryArtefacts = [],
 }) => {
   const styles = StyleSheet.create({
     summaryBox: {
@@ -250,6 +258,23 @@ export const ArchitectureDocument: React.FC<ArchitectureDocumentProps> = ({
           <>
             <Text style={pdfStyles.sectionTitle}>Compliance Notes</Text>
             <Text style={pdfStyles.bodyText}>{truncate(complianceNotes)}</Text>
+          </>
+        )}
+
+        {/* Supplementary Artefacts */}
+        {supplementaryArtefacts.length > 0 && (
+          <>
+            <Text style={pdfStyles.sectionTitle}>
+              Supplementary Artefacts ({supplementaryArtefacts.length})
+            </Text>
+            {supplementaryArtefacts.map((artefact, i) => (
+              <View key={i} style={pdfStyles.qaItem}>
+                <Text style={pdfStyles.qaQuestion}>{artefact.title}</Text>
+                <View style={pdfStyles.codeBlock}>
+                  <Text style={pdfStyles.codeText}>{truncate(artefact.content, 10000)}</Text>
+                </View>
+              </View>
+            ))}
           </>
         )}
 

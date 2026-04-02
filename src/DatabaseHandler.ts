@@ -6,7 +6,7 @@ import path from 'path';
 import fs from 'fs-extra';
 import {
   TaskFile, Task, Transition, AcceptanceCriterion, TestScenario, StakeholderReview,
-  DatabaseTaskRow, DatabaseRepoRow, Repo
+  DatabaseTaskRow, DatabaseRepoRow, Repo, FeatureArtefact
 } from './types.js';
 import { ROLE_SYSTEM_PROMPTS, RolePromptConfig } from './rolePrompts.js';
 import { PipelineRole } from './types.js';
@@ -75,6 +75,7 @@ export class DatabaseHandler {
       feature_test_scenarios: ['repo_name', 'feature_slug', 'scenario_id', 'title', 'description', 'priority'],
       settings: ['key', 'value', 'updated_at'],
       role_prompts: ['role_id', 'system_prompt'],
+      feature_artefacts: ['id', 'repo_name', 'feature_slug', 'artefact_type', 'title', 'content', 'created_at'],
     };
 
     const errors: string[] = [];
@@ -285,6 +286,18 @@ export class DatabaseHandler {
         UNIQUE(repo_name, feature_slug, scenario_id),
         FOREIGN KEY(feature_slug) REFERENCES features(feature_slug) ON DELETE CASCADE
       );
+
+      -- Feature Artefacts table (post-refinement supplementary content)
+      CREATE TABLE IF NOT EXISTS feature_artefacts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        repo_name TEXT NOT NULL,
+        feature_slug TEXT NOT NULL,
+        artefact_type TEXT NOT NULL CHECK(artefact_type IN ('diagram','api_contract','data_model','note')),
+        title TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_feature_artefacts_slug ON feature_artefacts (repo_name, feature_slug);
 
       -- Reviewer Presence table (T03: Presence Tracking)
       CREATE TABLE IF NOT EXISTS reviewer_presence (
@@ -2549,5 +2562,70 @@ echo "Starting dev workflow for {featureName}..."
         console.error(`[Presence Cleanup] Error: ${err}`);
       }
     }, intervalMinutes * 60 * 1000);
+  }
+
+  // ============================================================================
+  // Feature Artefacts Methods
+  // ============================================================================
+
+  /**
+   * Add a supplementary artefact to a feature.
+   * @returns The id of the newly inserted row.
+   */
+  addFeatureArtefact(
+    repoName: string,
+    featureSlug: string,
+    artefactType: string,
+    title: string,
+    content: string
+  ): number {
+    const result = this.db.prepare(`
+      INSERT INTO feature_artefacts (repo_name, feature_slug, artefact_type, title, content)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(repoName, featureSlug, artefactType, title, content);
+    return Number(result.lastInsertRowid);
+  }
+
+  /**
+   * Get all artefacts for a feature, optionally filtered by type.
+   */
+  getFeatureArtefacts(repoName: string, featureSlug: string, artefactType?: string): FeatureArtefact[] {
+    let rows: any[];
+    if (artefactType) {
+      rows = this.db.prepare(`
+        SELECT id, repo_name, feature_slug, artefact_type, title, content, created_at
+        FROM feature_artefacts
+        WHERE repo_name = ? AND feature_slug = ? AND artefact_type = ?
+        ORDER BY created_at ASC
+      `).all(repoName, featureSlug, artefactType) as any[];
+    } else {
+      rows = this.db.prepare(`
+        SELECT id, repo_name, feature_slug, artefact_type, title, content, created_at
+        FROM feature_artefacts
+        WHERE repo_name = ? AND feature_slug = ?
+        ORDER BY created_at ASC
+      `).all(repoName, featureSlug) as any[];
+    }
+    return rows.map(row => ({
+      id: row.id,
+      repoName: row.repo_name,
+      featureSlug: row.feature_slug,
+      artefactType: row.artefact_type as FeatureArtefact['artefactType'],
+      title: row.title,
+      content: row.content,
+      createdAt: row.created_at,
+    }));
+  }
+
+  /**
+   * Delete a specific artefact by id.
+   * @returns true if a row was deleted, false if not found.
+   */
+  deleteFeatureArtefact(repoName: string, featureSlug: string, artefactId: number): boolean {
+    const result = this.db.prepare(`
+      DELETE FROM feature_artefacts
+      WHERE id = ? AND repo_name = ? AND feature_slug = ?
+    `).run(artefactId, repoName, featureSlug);
+    return result.changes > 0;
   }
 }

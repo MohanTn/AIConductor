@@ -309,6 +309,16 @@ export const DEV_WORKFLOW_RULES: Record<TaskStatus, DevWorkflowRule> = {
   Done: { allowedActors: ['system'], allowedTransitions: ['ReadyForDevelopment'] },
 };
 
+export interface FeatureArtefact {
+  id: number;
+  repoName: string;
+  featureSlug: string;
+  artefactType: 'diagram' | 'api_contract' | 'data_model' | 'note';
+  title: string;
+  content: string;
+  createdAt: string;
+}
+
 // Tool input/output interfaces
 
 export interface TransitionTaskInput {

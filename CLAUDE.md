@@ -199,10 +199,11 @@ docker-compose down -v
 - **`dashboard/routes/task.routes.ts`** — `/api/tasks` endpoints
 - **`dashboard/routes/refinement.routes.ts`** — `/api/refinement` endpoints
 - **`dashboard/routes/export.routes.ts`** — `/api/features/:slug/export/prd` and `/api/features/:slug/export/architecture` PDF download endpoints
+- **`dashboard/routes/artefact.routes.ts`** — `/api/features/:slug/artefacts` CRUD (POST, GET with `?type=` filter, DELETE `/:id`)
 
 **PDF Generation (`src/pdf-templates/` + `src/services/`):**
-- **`pdf-templates/PRDDocument.tsx`** — React PDF component for PRD (feature overview, AC, test scenarios, clarifications, stakeholder reviews)
-- **`pdf-templates/ArchitectureDocument.tsx`** — React PDF component for Architecture doc (tech stack, design patterns, flow/sequential diagrams as Mermaid source, API contracts, auth details, security requirements)
+- **`pdf-templates/PRDDocument.tsx`** — React PDF component for PRD (feature overview, AC, test scenarios, clarifications, stakeholder reviews, supplementary notes/api_contracts)
+- **`pdf-templates/ArchitectureDocument.tsx`** — React PDF component for Architecture doc (tech stack, design patterns, flow/sequential diagrams as Mermaid source, API contracts, auth details, security requirements, supplementary diagrams/api_contracts/data_models)
 - **`pdf-templates/pdfStyles.ts`** — Shared `@react-pdf/renderer` StyleSheet
 - **`services/PDFExportService.ts`** — Orchestrates data fetching from DB and calls `renderToBuffer`; Mermaid diagrams rendered as source text (no Playwright dependency)
 

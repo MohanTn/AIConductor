@@ -8,8 +8,8 @@
 import React from 'react';
 import { renderToBuffer } from '@react-pdf/renderer';
 import { DatabaseHandler } from '../DatabaseHandler.js';
-import { PRDDocument, PRDDocumentProps, PRDStakeholderReview } from '../pdf-templates/PRDDocument.js';
-import { ArchitectureDocument, ArchitectureDocumentProps, DiagramField } from '../pdf-templates/ArchitectureDocument.js';
+import { PRDDocument, PRDDocumentProps, PRDStakeholderReview, PRDArtefact } from '../pdf-templates/PRDDocument.js';
+import { ArchitectureDocument, ArchitectureDocumentProps, DiagramField, ArchArtefact } from '../pdf-templates/ArchitectureDocument.js';
 
 const ROLE_ORDER = ['productDirector', 'architect', 'uiUxExpert', 'securityOfficer'] as const;
 const ROLE_LABELS: Record<string, string> = {
@@ -114,6 +114,12 @@ export class PDFExportService {
         notes: reviewsByRole[role].notes.slice(0, 3).join('\n\n'),
       }));
 
+    // Fetch supplementary artefacts — notes and api_contracts go into the PRD
+    const allArtefacts = this.db.getFeatureArtefacts(repoName, featureSlug);
+    const prdArtefacts: PRDArtefact[] = allArtefacts
+      .filter(a => a.artefactType === 'note' || a.artefactType === 'api_contract')
+      .map(a => ({ title: a.title.slice(0, 200), content: a.content.slice(0, 10000), type: a.artefactType as PRDArtefact['type'] }));
+
     const props: PRDDocumentProps = {
       featureName: feature.featureName || featureSlug,
       description: (feature.description || '').slice(0, 10000),
@@ -137,6 +143,7 @@ export class PDFExportService {
         answer: c.answer ? c.answer.slice(0, 2000) : undefined,
       })),
       stakeholderReviews,
+      supplementaryArtefacts: prdArtefacts,
     };
 
     const element = React.createElement(PRDDocument, props);
@@ -216,6 +223,12 @@ export class PDFExportService {
       buildDiagramField(architectData.sequentialCallsDiagram, 'Figure 2: Sequential Calls'),
     ]);
 
+    // Fetch supplementary artefacts — diagrams, api_contracts, and data_models go into Architecture
+    const allArtefacts = this.db.getFeatureArtefacts(repoName, featureSlug);
+    const archArtefacts: ArchArtefact[] = allArtefacts
+      .filter(a => a.artefactType === 'diagram' || a.artefactType === 'api_contract' || a.artefactType === 'data_model')
+      .map(a => ({ title: a.title.slice(0, 200), content: a.content.slice(0, 10000), type: a.artefactType as ArchArtefact['type'] }));
+
     const props: ArchitectureDocumentProps = {
       featureName: feature.featureName || featureSlug,
       description: (feature.description || '').slice(0, 10000),
@@ -230,6 +243,7 @@ export class PDFExportService {
       securityRequirements: securityData.securityRequirements,
       complianceNotes: (securityData.complianceNotes || '').slice(0, 5000),
       architectNotes: (architectData.notes || '').slice(0, 5000),
+      supplementaryArtefacts: archArtefacts,
     };
 
     const element = React.createElement(ArchitectureDocument, props);
