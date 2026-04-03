@@ -77,7 +77,7 @@ The server uses SQLite for persistence and can run either locally or in Docker w
 - `NeedsRefinement` — Rejected; restart from Product Director after fixes
 
 **Development Phase:**
-- `ReadyForDevelopment` → `ToDo` → `InProgress` → `InReview` → `InQA` → `Done`
+- `ReadyForDevelopment` → `InProgress` → `InReview` → `InQA` → `Done` (developer can transition directly; `ToDo` retained for backward compatibility)
 - `NeedsChanges` — Rejected by Code Reviewer or QA; restart from `InProgress`
 
 ### Batched Role Processing (Optimized)

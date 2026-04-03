@@ -1098,5 +1098,54 @@ export const TOOLS = [
       required: ['repoName', 'featureSlug', 'taskId'],
     },
   },
+
+  {
+    name: 'get_workflow_context',
+    description:
+      'Single-call orientation tool. Returns current pipeline phase, role, system prompt, pending task IDs, all task summaries, and a nextAction hint. Replaces get_next_step + get_workflow_snapshot + get_tasks_by_status in one call.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repoName: { type: 'string', description: 'Repository name' },
+        featureSlug: { type: 'string', description: 'Feature slug name' },
+      },
+      required: ['repoName', 'featureSlug'],
+    },
+  },
+  {
+    name: 'submit_role_batch_review',
+    description:
+      'Submit stakeholder reviews for multiple tasks in one call. All reviews must be for the same stakeholder role. Max 20 items per batch. Returns per-task results with allSucceeded flag.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repoName: { type: 'string', description: 'Repository name' },
+        featureSlug: { type: 'string', description: 'Feature slug name' },
+        stakeholder: {
+          type: 'string',
+          enum: ['productDirector', 'architect', 'uiUxExpert', 'securityOfficer'],
+          description: 'Stakeholder role for all reviews in this batch. Do NOT mix roles in one call.',
+        },
+        reviews: {
+          type: 'array',
+          description: 'Array of reviews (max 20). Each item mirrors the single add_stakeholder_review shape.',
+          items: {
+            type: 'object',
+            properties: {
+              taskId: { type: 'string', description: 'Task ID (e.g. T01)' },
+              decision: { type: 'string', enum: ['approve', 'reject'] },
+              notes: { type: 'string', description: 'Review notes for this task' },
+              additionalFields: {
+                type: 'object',
+                description: 'Role-specific fields. Do NOT include PII, credentials, or API keys.',
+              },
+            },
+            required: ['taskId', 'decision', 'notes'],
+          },
+        },
+      },
+      required: ['repoName', 'featureSlug', 'stakeholder', 'reviews'],
+    },
+  },
 ];
 

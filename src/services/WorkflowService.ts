@@ -4,10 +4,11 @@
  *
  * Covers: getWorkflowSnapshot, saveWorkflowCheckpoint, listWorkflowCheckpoints,
  *         restoreWorkflowCheckpoint, rollbackLastDecision, getTaskExecutionPlan,
- *         getWorkflowMetrics, getSimilarTasks.
+ *         getWorkflowMetrics, getSimilarTasks, getWorkflowContext.
  */
 import {
   TaskStatus,
+  PipelineRole,
   GetWorkflowSnapshotResult,
   SaveWorkflowCheckpointInput,
   SaveWorkflowCheckpointResult,
@@ -23,6 +24,9 @@ import {
   GetWorkflowMetricsResult,
   GetSimilarTasksInput,
   GetSimilarTasksResult,
+  GetWorkflowContextInput,
+  GetWorkflowContextResult,
+  NextActionHint,
   WorkflowAlert,
   SimilarTask,
 } from '../types.js';
@@ -580,6 +584,214 @@ export class WorkflowService extends ServiceBase {
       return {
         success: false,
         similarTasks: [],
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  // ── T04: buildNextAction helper ────────────────────────────────────────────
+  // Pure function: derives the next recommended tool call from current state.
+  // Uses only typed constants — no dynamic string construction for tool names.
+  private buildNextAction(
+    repoName: string,
+    featureSlug: string,
+    phase: 'refinement' | 'development' | 'complete',
+    currentRole: PipelineRole | null,
+    pendingTaskIds: string[]
+  ): NextActionHint | null {
+    if (phase === 'complete' || pendingTaskIds.length === 0 || !currentRole) {
+      return null;
+    }
+
+    if (phase === 'refinement') {
+      const stakeholderMap: Partial<Record<PipelineRole, string>> = {
+        productDirector: 'productDirector',
+        architect: 'architect',
+        uiUxExpert: 'uiUxExpert',
+        securityOfficer: 'securityOfficer',
+      };
+      const stakeholder = stakeholderMap[currentRole];
+      if (!stakeholder) return null;
+      return {
+        tool: 'submit_role_batch_review',
+        hint: `Submit ${currentRole} reviews for ${pendingTaskIds.length} task(s): ${pendingTaskIds.join(', ')}`,
+        requiredParams: {
+          repoName,
+          featureSlug,
+          stakeholder,
+          reviews: pendingTaskIds.map((id) => ({
+            taskId: id,
+            decision: 'approve',
+            notes: '(your review notes here)',
+            additionalFields: {},
+          })),
+        },
+      };
+    }
+
+    // Development phase — hint based on role
+    if (currentRole === 'developer') {
+      const hasReady = pendingTaskIds.length > 0;
+      if (!hasReady) return null;
+      return {
+        tool: 'batch_transition_tasks',
+        hint: `Start development: transition ${pendingTaskIds.length} task(s) to InProgress`,
+        requiredParams: {
+          repoName,
+          featureSlug,
+          taskIds: pendingTaskIds,
+          fromStatus: 'ReadyForDevelopment',
+          toStatus: 'InProgress',
+          actor: 'developer',
+        },
+      };
+    }
+
+    if (currentRole === 'codeReviewer') {
+      return {
+        tool: 'batch_transition_tasks',
+        hint: `Code review complete: transition ${pendingTaskIds.length} task(s) to InQA`,
+        requiredParams: {
+          repoName,
+          featureSlug,
+          taskIds: pendingTaskIds,
+          fromStatus: 'InReview',
+          toStatus: 'InQA',
+          actor: 'codeReviewer',
+        },
+      };
+    }
+
+    if (currentRole === 'qa') {
+      return {
+        tool: 'batch_transition_tasks',
+        hint: `QA complete: transition ${pendingTaskIds.length} task(s) to Done`,
+        requiredParams: {
+          repoName,
+          featureSlug,
+          taskIds: pendingTaskIds,
+          fromStatus: 'InQA',
+          toStatus: 'Done',
+          actor: 'qa',
+        },
+      };
+    }
+
+    return null;
+  }
+
+  // ── T01: getWorkflowContext ────────────────────────────────────────────────
+  // Single-call orientation: replaces get_next_step + get_workflow_snapshot +
+  // get_tasks_by_status. Queries the DB directly (no internal MCP round-trips).
+  async getWorkflowContext(input: GetWorkflowContextInput): Promise<GetWorkflowContextResult> {
+    try {
+      const taskFile = await this.db.loadByFeatureSlug(input.featureSlug, input.repoName);
+
+      const REFINEMENT_STATUSES: TaskStatus[] = [
+        'PendingProductDirector', 'PendingArchitect', 'PendingUiUxExpert', 'PendingSecurityOfficer',
+        'NeedsRefinement',
+      ];
+      const DEV_STATUSES: TaskStatus[] = [
+        'ReadyForDevelopment', 'ToDo', 'InProgress', 'InReview', 'InQA', 'NeedsChanges',
+      ];
+
+      const roleByStatus: Partial<Record<TaskStatus, PipelineRole>> = {
+        PendingProductDirector: 'productDirector',
+        PendingArchitect: 'architect',
+        PendingUiUxExpert: 'uiUxExpert',
+        PendingSecurityOfficer: 'securityOfficer',
+        NeedsRefinement: 'productDirector',
+        ReadyForDevelopment: 'developer',
+        ToDo: 'developer',
+        InProgress: 'developer',
+        InReview: 'codeReviewer',
+        InQA: 'qa',
+        NeedsChanges: 'developer',
+      };
+
+      // Priority order for determining "current" role (lower index = higher priority)
+      const statusPriority: TaskStatus[] = [
+        'NeedsRefinement', 'NeedsChanges',
+        'PendingProductDirector', 'PendingArchitect', 'PendingUiUxExpert', 'PendingSecurityOfficer',
+        'ReadyForDevelopment', 'ToDo', 'InProgress', 'InReview', 'InQA',
+      ];
+
+      const taskSummaries = taskFile.tasks.map((t) => ({
+        taskId: t.taskId,
+        title: t.title.substring(0, 200),
+        status: t.status,
+        orderOfExecution: t.orderOfExecution,
+      })).sort((a, b) => a.orderOfExecution - b.orderOfExecution);
+
+      const allDone = taskFile.tasks.every((t) => t.status === 'Done');
+      if (allDone) {
+        return {
+          success: true,
+          phase: 'complete',
+          currentRole: null,
+          systemPrompt: '',
+          pendingTaskIds: [],
+          taskSummaries,
+          nextAction: null,
+          message: 'All tasks are Done. Feature development complete.',
+        };
+      }
+
+      // Find the highest-priority non-Done status
+      let currentRole: PipelineRole | null = null;
+      let dominantStatus: TaskStatus | null = null;
+      for (const status of statusPriority) {
+        if (taskFile.tasks.some((t) => t.status === status)) {
+          currentRole = roleByStatus[status] ?? null;
+          dominantStatus = status;
+          break;
+        }
+      }
+
+      const phase: 'refinement' | 'development' | 'complete' =
+        dominantStatus && REFINEMENT_STATUSES.includes(dominantStatus) ? 'refinement' :
+        dominantStatus && DEV_STATUSES.includes(dominantStatus) ? 'development' :
+        'complete';
+
+      const pendingTaskIds = taskFile.tasks
+        .filter((t) => t.status === dominantStatus)
+        .sort((a, b) => a.orderOfExecution - b.orderOfExecution)
+        .map((t) => t.taskId);
+
+      // Get system prompt from DB (same source as getNextStep)
+      let systemPrompt = '';
+      if (currentRole) {
+        try {
+          const roleConfig = this.db.getRolePrompt(currentRole);
+          systemPrompt = roleConfig.systemPrompt ?? '';
+        } catch {
+          // Role prompt not found — return empty string
+        }
+      }
+
+      const nextAction = this.buildNextAction(
+        input.repoName, input.featureSlug, phase, currentRole, pendingTaskIds
+      );
+
+      return {
+        success: true,
+        phase,
+        currentRole,
+        systemPrompt,
+        pendingTaskIds,
+        taskSummaries,
+        nextAction,
+        message: `Workflow context: ${phase} phase, ${pendingTaskIds.length} task(s) pending ${currentRole ?? ''} action`,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        phase: 'refinement',
+        currentRole: null,
+        systemPrompt: '',
+        pendingTaskIds: [],
+        taskSummaries: [],
+        nextAction: null,
         error: error instanceof Error ? error.message : String(error),
       };
     }

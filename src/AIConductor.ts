@@ -76,6 +76,10 @@ import {
   ValidateReviewCompletenessResult,
   GetSimilarTasksInput,
   GetSimilarTasksResult,
+  GetWorkflowContextInput,
+  GetWorkflowContextResult,
+  SubmitRoleBatchReviewInput,
+  SubmitRoleBatchReviewResult,
 } from './types.js';
 import { DatabaseHandler } from './DatabaseHandler.js';
 import { WorkflowValidator } from './WorkflowValidator.js';
@@ -387,5 +391,15 @@ export class AIConductor {
 
   resetRolePrompt(roleId: PipelineRole): RolePromptConfig {
     return this.dbHandler.resetRolePrompt(roleId);
+  }
+
+  // ── T01: get_workflow_context ──────────────────────────────────────────────
+  async getWorkflowContext(input: GetWorkflowContextInput): Promise<GetWorkflowContextResult> {
+    return this.workflowService.getWorkflowContext(input);
+  }
+
+  // ── T02: submit_role_batch_review ─────────────────────────────────────────
+  async submitRoleBatchReview(input: SubmitRoleBatchReviewInput): Promise<SubmitRoleBatchReviewResult> {
+    return this.reviewService.submitRoleBatchReview(input);
   }
 }

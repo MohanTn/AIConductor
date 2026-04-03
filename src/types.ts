@@ -283,7 +283,7 @@ export const DEV_WORKFLOW_RULES: Record<TaskStatus, DevWorkflowRule> = {
   PendingArchitect: { allowedActors: ['architect', 'system'], allowedTransitions: ['PendingUiUxExpert', 'NeedsRefinement'] },
   PendingUiUxExpert: { allowedActors: ['uiUxExpert', 'system'], allowedTransitions: ['PendingSecurityOfficer', 'NeedsRefinement'] },
   PendingSecurityOfficer: { allowedActors: ['securityOfficer', 'system'], allowedTransitions: ['ReadyForDevelopment', 'NeedsRefinement'] },
-  ReadyForDevelopment: { allowedActors: ['system'], allowedTransitions: ['ToDo'] },
+  ReadyForDevelopment: { allowedActors: ['developer', 'system'], allowedTransitions: ['InProgress', 'ToDo'] },
   NeedsRefinement: { allowedActors: ['system'], allowedTransitions: ['PendingProductDirector'] },
   ToDo: { allowedActors: ['system', 'developer'], allowedTransitions: ['InProgress'] },
   InProgress: { allowedActors: ['developer'], allowedTransitions: ['InReview'] },
@@ -1227,6 +1227,79 @@ export interface GetSimilarTasksResult {
   success: boolean;
   referenceTask?: { taskId: string; title: string; tags?: string[] };
   similarTasks: SimilarTask[];
+  message?: string;
+  error?: string;
+}
+
+// ============================================================================
+// T04: NextAction guidance hint (shared across get_workflow_context, get_next_step)
+// ============================================================================
+
+export interface NextActionHint {
+  tool: string;
+  hint: string;
+  requiredParams: Record<string, unknown>;
+}
+
+// ============================================================================
+// T01: get_workflow_context — single-call orientation tool
+// ============================================================================
+
+export interface WorkflowContextTaskSummary {
+  taskId: string;
+  title: string;
+  status: TaskStatus;
+  orderOfExecution: number;
+}
+
+export interface GetWorkflowContextInput {
+  repoName: string;
+  featureSlug: string;
+}
+
+export interface GetWorkflowContextResult {
+  success: boolean;
+  phase: 'refinement' | 'development' | 'complete';
+  currentRole: PipelineRole | null;
+  systemPrompt: string;
+  pendingTaskIds: string[];
+  taskSummaries: WorkflowContextTaskSummary[];
+  nextAction: NextActionHint | null;
+  message?: string;
+  error?: string;
+}
+
+// ============================================================================
+// T02: submit_role_batch_review — batch stakeholder reviews in one call
+// ============================================================================
+
+export interface BatchReviewItem {
+  taskId: string;
+  decision: ReviewDecision;
+  notes: string;
+  additionalFields?: Record<string, unknown>;
+}
+
+export interface BatchReviewItemResult {
+  taskId: string;
+  success: boolean;
+  newStatus?: TaskStatus;
+  error?: string;
+}
+
+export interface SubmitRoleBatchReviewInput {
+  repoName: string;
+  featureSlug: string;
+  stakeholder: StakeholderRole;
+  reviews: BatchReviewItem[];
+}
+
+export interface SubmitRoleBatchReviewResult {
+  success: boolean;
+  allSucceeded: boolean;
+  results: BatchReviewItemResult[];
+  totalProcessed: number;
+  totalSucceeded: number;
   message?: string;
   error?: string;
 }

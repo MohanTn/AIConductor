@@ -575,6 +575,33 @@ export function createToolHandlers(
       return wrapResult(result);
     }],
 
+    // ── T01: get_workflow_context ──────────────────────────────────────────
+    ['get_workflow_context', async (args) => {
+      const result = await reviewManager.getWorkflowContext({
+        repoName: requireString(args, 'repoName'),
+        featureSlug: requireString(args, 'featureSlug'),
+      });
+      return wrapResult(result);
+    }],
+
+    // ── T02: submit_role_batch_review ──────────────────────────────────────
+    ['submit_role_batch_review', async (args) => {
+      const result = await reviewManager.submitRoleBatchReview({
+        repoName: requireString(args, 'repoName'),
+        featureSlug: requireString(args, 'featureSlug'),
+        stakeholder: requireEnum(args, 'stakeholder', STAKEHOLDER_ROLES),
+        reviews: args.reviews as any,
+      });
+      broadcast({
+        type: 'task-status-changed',
+        action: 'batch-reviewed',
+        repoName: requireString(args, 'repoName'),
+        featureSlug: requireString(args, 'featureSlug'),
+        timestamp: Date.now(),
+      }).catch(() => {});
+      return wrapResult(result);
+    }],
+
   ]);
 
   return handlers;

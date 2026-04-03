@@ -1,203 +1,76 @@
 ---
 name: dev-workflow
-description: Feature development workflow with batched role processing. Developer implements all tasks, Code Reviewer reviews all, QA tests all - maximizing efficiency and minimizing context switching.
+description: Feature development workflow — implements all tasks (Developer → Code Reviewer → QA) in batched role order, commits changes, and moves all tasks to Done.
 ---
 
-# Input
-- Refined feature_slug with pre-approved tasks from refinement phase stored in MCP database
+# dev-workflow — Compact State-Machine Reference
 
-# Output
-No file must be created for this workflow. All outputs should be returned in the response and any code changes should be committed to the appropriate feature branch in the repository.
+## HARD CONSTRAINTS
+- Valid statuses ONLY: `ReadyForDevelopment → InProgress → InReview → InQA → Done`
+- Rejection: `InReview|InQA → NeedsChanges → InProgress` (direct — do NOT go via ReadyForDevelopment or ToDo)
+- Actor values (exact camelCase): `developer`, `codeReviewer`, `qa`, `system`
+- `documentationNotes` is **required** in developer metadata — "No documentation updates required: [reason]" if none needed.
+- Do NOT store credentials or sensitive data in notes fields.
 
-# Step 1 - Prerequisites and Validation
-- **[UPDATED - Rec 1]** Call `mcp__aiconductor__get_workflow_snapshot` for context-efficient feature overview (instead of `get_feature`)
-- Confirm all tasks have status "ReadyForDevelopment"
-- Review the summary:
-  - Feature objective and acceptance criteria (pre-approved)
-  - Dependencies identified in refinement
-  - Stakeholder feedback summary from all 4 reviewers
-  - Priority and scope
-- **[NEW - Rec 5]** Call `mcp__aiconductor__get_workflow_metrics` to check health score and identify any concerns before starting
-- Confirm this is ready for development
+## Status Transition Table
 
-# Step 2 - Stakeholder Decisions Review
-- Review stakeholder analysis from task transitions (already validated)
-- Confirm architecture decisions from Architect review
-- Verify technical specifications and design patterns
-- Review security requirements from Security Officer approval
-- Review UX requirements from UI/UX Expert approval
+| From | To | Actor | Tool |
+|------|----|-------|------|
+| `ReadyForDevelopment` | `InProgress` | `developer` | `batch_transition_tasks` |
+| `InProgress` | `InReview` | `developer` | `batch_transition_tasks` |
+| `InReview` | `InQA` | `codeReviewer` | `batch_transition_tasks` |
+| `InReview` | `NeedsChanges` | `codeReviewer` | `batch_transition_tasks` |
+| `InQA` | `Done` | `qa` | `batch_transition_tasks` |
+| `InQA` | `NeedsChanges` | `qa` | `batch_transition_tasks` |
+| `NeedsChanges` | `InProgress` | `developer` | `transition_task_status` |
 
-# Step 3 - Codebase Investigation
-- Search codebase for related services, components, and existing patterns
-- Identify relevant repositories, services, controllers, and middleware
-- Query DB schemas if applicable: tables, foreign keys, constraints
-- Validate that recommended architecture is compatible with existing codebase
+## Required Metadata per Role
 
-# Step 4 - Task Verification & Execution Planning
-- **[UPDATED - Rec 1]** Call `mcp__aiconductor__get_workflow_snapshot` to verify all required tasks exist
-- Confirm all tasks have status "ReadyForDevelopment"
-- **[NEW - Rec 4]** Call `mcp__aiconductor__get_task_execution_plan` to:
-  - Determine optimal execution order
-  - Identify parallelizable tasks
-  - Review critical path and any warnings
-- Use the optimal order from execution plan instead of just orderOfExecution
+| Role | Required Fields | Optional Fields |
+|------|-----------------|-----------------|
+| `developer` | `developerNotes`, `filesChanged` (str[]), `documentationNotes` | `testFiles` (str[]), `docsUpdated` (str[]) |
+| `codeReviewer` | `codeReviewerNotes`, `testResultsSummary` | `codeQualityConcerns` |
+| `qa` | `qaNotes`, `testExecutionSummary`, `acceptanceCriteriaMet` (bool) | — |
 
-# Step 5 - Feature Branch Creation
-- Create feature branch: `git checkout -b feature/<feature_slug>/description`
-- Initial commit to establish branch
+## Workflow Steps
 
-# Step 6 - Development Cycle (BATCHED BY ROLE)
-**CRITICAL: Process ALL tasks through each role in a single batch before moving to next role. Adopt each role ONCE per batch to minimize context switching.**
+### 1 — Prerequisites
+`get_workflow_context(repoName, featureSlug)` — confirm all tasks `ReadyForDevelopment`. Review stakeholder notes.
+`get_workflow_metrics` — verify healthScore and no blocking alerts.
 
-## 6.0 - Initialize Task List
-- Call `mcp__aiconductor__get_tasks_by_status` with status "ReadyForDevelopment"
-- Store all task IDs for processing
+### 2 — Branch
+`git checkout -b feature/<featureSlug>/description`
 
-## 6.1 - DEVELOPER BATCH (IMPLEMENT ALL TASKS)
-**Single developer identity for entire batch:**
-- Adopt Developer role ONCE for entire batch
-- Sort tasks by orderOfExecution
-- For each task (implement ALL in sequence):
-  - Call `mcp__aiconductor__get_next_step` to get systemPrompt and previousRoleNotes
-  - Review ALL stakeholder feedback:
-    - Product Director notes (UX/feature requirements)
-    - Architect notes (technical approach, design patterns)
-    - UI/UX Expert notes (usability, accessibility)
-    - Security Officer notes (security requirements, compliance)
-  - Implement the feature following stakeholder guidance
-  - Write comprehensive unit and integration tests
-  - Document implementation approach
-- Once ALL tasks implemented:
-  - **[BUILD VERIFICATION]** Run the appropriate build command for the project's language and toolchain (e.g., `npm run build`, `mvn package`, `cargo build`, `go build`, `python -m py_compile`, etc.) — confirm it succeeds with zero errors before proceeding
-  - **[APP VERIFICATION]** Start the application using the appropriate run command for the project (e.g., `npm start`, `java -jar app.jar`, `./target/app`, `go run main.go`, `python app.py`, etc.) and confirm it starts and runs correctly without runtime errors; stop the process after confirming it is healthy
-  - **[DOCUMENTATION VERIFICATION]** Search the repository for documentation files (README.md, CLAUDE.md, docs/, *.md, API docs, configuration examples, etc.). For each documentation file, verify that any references to code you changed are still accurate. Update any outdated content including:
-    - File paths, class names, method signatures, interfaces
-    - New or removed features, commands, or configuration options
-    - Changed architecture, data flow, or directory structure
-    - Updated environment variables, ports, or deployment instructions
-    - New or removed dependencies
-    - If no documentation updates are needed, explicitly note "No documentation updates required" with a brief justification
-  - **[NEW - Rec 2]** Call `mcp__aiconductor__batch_transition_tasks` to move ALL from InProgress → InReview in one call:
-    - `taskIds`: All implemented task IDs
-    - `fromStatus`: "InProgress"
-    - `toStatus`: "InReview"
-    - `metadata`: Shared developer notes, docsUpdated (array of doc files updated), and documentationNotes (explanation of changes or why none needed)
-  - **[NEW - Rec 3]** Call `mcp__aiconductor__save_workflow_checkpoint` with description "After developer batch - all tasks in InReview"
-- **Progress output**: "Developer batch complete: [N] tasks implemented and moved to InReview"
-- Commit all changes with message: `feature/<feature_slug>: implement all tasks`
+### 3 — Developer Batch (implement ALL tasks)
+1. `get_next_step(repoName, featureSlug, T01)` — get developer systemPrompt (once for entire batch).
+2. Read all stakeholder notes (Architect patterns, Security requirements, UX guidelines).
+3. `batch_transition_tasks(taskIds: all, fromStatus: ReadyForDevelopment, toStatus: InProgress, actor: developer)`.
+4. Implement all tasks in `orderOfExecution` order.
+5. Run build: `npm run build` — must succeed with zero errors.
+6. Search `*.md`, `docs/`, `CLAUDE.md` — update any outdated references.
+7. `batch_transition_tasks(taskIds: all, fromStatus: InProgress, toStatus: InReview, actor: developer, metadata: {developerNotes, filesChanged, documentationNotes})`.
+8. `save_workflow_checkpoint` — "After developer batch - all tasks in InReview".
+9. Commit: `git commit -m "feature/<slug>: implement all tasks"`.
 
-## 6.2 - CODE REVIEWER BATCH (REVIEW ALL IMPLEMENTATIONS)
-**Single code reviewer identity for entire batch:**
-- Adopt Code Reviewer role ONCE for entire batch
-- Get all tasks with status "InReview"
-- For each task (review ALL):
-  - Call `mcp__aiconductor__get_next_step` to get systemPrompt and previousRoleNotes
-  - Review all code changes listed in filesChanged
-  - Review test files and coverage
-  - Verify adherence to:
-    - Architect recommendations (design patterns, technology choices)
-    - Security requirements (Security Officer notes)
-    - Code quality standards (clean code, documentation)
-  - **Verify documentation updates**: Check the docsUpdated and documentationNotes fields from the developer. If code changes affect documented behavior, APIs, configuration, or architecture, confirm documentation has been updated accordingly. Flag missing documentation updates as a rejection reason.
-  - Prepare review notes
-- Once ALL reviews completed:
-  - **[NEW - Rec 2]** Call `mcp__aiconductor__batch_transition_tasks` for APPROVED tasks from InReview → InQA:
-    - `taskIds`: All approved task IDs
-    - `fromStatus`: "InReview"
-    - `toStatus`: "InQA"
-    - `metadata`: Code reviewer notes
-  - **[NEW - Rec 2]** Call `mcp__aiconductor__batch_transition_tasks` for REJECTED tasks from InReview → NeedsChanges:
-    - `taskIds`: All rejected task IDs
-    - `fromStatus`: "InReview"
-    - `toStatus`: "NeedsChanges"
-    - `metadata`: Issues found and required changes
-- **Progress output**: "Code Reviewer batch complete: [N] approved → InQA, [M] rejected → NeedsChanges"
+### 4 — Code Reviewer Batch (review ALL tasks)
+1. `get_next_step(repoName, featureSlug, T01)` — get code reviewer systemPrompt (once for batch).
+2. Review each task's `filesChanged`. Verify AC, design patterns, security controls, and `documentationNotes`.
+3. `batch_transition_tasks(approved: InReview→InQA, actor: codeReviewer, metadata: {codeReviewerNotes, testResultsSummary})`.
+4. `batch_transition_tasks(rejected: InReview→NeedsChanges, actor: codeReviewer, metadata: {codeReviewerNotes})` (if any).
 
-## 6.3 - QA BATCH (TEST ALL IMPLEMENTATIONS)
-**Single QA identity for entire batch:**
-- Adopt QA role ONCE for entire batch
-- Get all tasks with status "InQA"
-- For each task (test ALL):
-  - Call `mcp__aiconductor__get_next_step` to get systemPrompt, previousRoleNotes, and test scenarios
-  - Execute all test scenarios from task definition
-  - Verify all acceptance criteria are met
-  - Test against stakeholder requirements:
-    - Product Director requirements (feature behavior)
-    - UI/UX Expert requirements (usability, accessibility)
-    - Security Officer requirements (security controls)
-  - **[NEW - Rec 2]** Collect all AC updates and use `mcp__aiconductor__batch_update_acceptance_criteria` to mark ALL verified criteria at once:
-    - Pass array of `{ taskId, criterionId, verified }` for each AC being marked
-  - Prepare testing notes
-- Once ALL tests completed:
-  - **[NEW - Rec 2]** Call `mcp__aiconductor__batch_transition_tasks` for PASSED tasks from InQA → Done:
-    - `taskIds`: All passing task IDs
-    - `fromStatus`: "InQA"
-    - `toStatus`: "Done"
-    - `metadata`: QA notes and test execution summary
-  - **[NEW - Rec 2]** Call `mcp__aiconductor__batch_transition_tasks` for FAILED tasks from InQA → NeedsChanges:
-    - `taskIds`: All failing task IDs
-    - `fromStatus`: "InQA"
-    - `toStatus`: "NeedsChanges"
-    - `metadata`: Failed tests and bugs found
-- **Progress output**: "QA batch complete: [N] passed → Done, [M] failed → NeedsChanges"
+### 5 — QA Batch (test ALL tasks)
+1. `get_next_step(repoName, featureSlug, T01)` — get QA systemPrompt (once for batch).
+2. Execute test scenarios from task definitions. Verify all AC.
+3. `batch_update_acceptance_criteria([{taskId, criterionId, verified: true}])` — mark all verified AC at once.
+4. `batch_transition_tasks(passed: InQA→Done, actor: qa, metadata: {qaNotes, testExecutionSummary, acceptanceCriteriaMet: true})`.
+5. `batch_transition_tasks(failed: InQA→NeedsChanges, actor: qa, metadata: {qaNotes})` (if any).
+6. `save_workflow_checkpoint` — "After QA batch - N done, M need fixes".
 
-## 6.4 - Handle Tasks Needing Changes (If Any)
-- Get all tasks with status "NeedsChanges"
-- If any tasks need changes:
-  - **[NEW - Rec 5]** Call `mcp__aiconductor__get_workflow_metrics` to see if rework cycles are high (warning pattern)
-  - Review feedback from code reviewer or QA
-  - Address all identified issues
-  - Re-enter developer phase for fixes:
-    - Call `mcp__aiconductor__transition_task_status` from NeedsChanges → InProgress
-    - Make required fixes
-    - Call `mcp__aiconductor__transition_task_status` from InProgress → InReview
-  - Tasks re-enter code review queue (Step 6.2)
-  - Repeat cycles until all tasks reach "Done"
-- Commit fixes with message: `feature/<feature_slug>: address review feedback`
+### 6 — Handle NeedsChanges (if any)
+`get_workflow_metrics` — check rework cycle count (alert if high).
+Fix issues → `transition_task_status(NeedsChanges→InProgress)` → re-enter step 3 for those tasks.
 
-## 6.5 - Iteration Management & Checkpoint Intervals
-- After each batch completes:
-  - Check for any tasks in "NeedsChanges" status
-  - If found, process developer fixes in batch
-  - **[NEW - Rec 5]** Call `mcp__aiconductor__get_workflow_metrics` to check health score after each batch
-  - **[NEW - Rec 3]** Call `mcp__aiconductor__save_workflow_checkpoint` periodically:
-    - After code review batch completes: "After code review batch - ready for QA"
-    - After QA batch completes: "After QA batch - [N] done, [M] need fixes"
-  - Continue batched review/QA until all tasks reach "Done"
-  - This batched approach minimizes context switching and improves efficiency
-
-## 6.6 - Workflow Interruption & Resume
-- **[NEW - Rec 3]** If workflow is interrupted (token limit, connection loss):
-  - Call `mcp__aiconductor__list_workflow_checkpoints` to see all saved checkpoints
-  - Call `mcp__aiconductor__restore_workflow_checkpoint` with the most recent checkpoint ID
-  - Resume from the next logical phase (e.g., if last checkpoint was "After developer batch", resume with code review)
-- This enables long-running workflows to survive interruptions
-
-## 6.7 - Final Task Verification & PR Prep
-- Call `mcp__aiconductor__verify_all_tasks_complete` to confirm ALL tasks have status "Done"
-- Review task completion: confirm all tasks show proper transition history
-- Create a Pull Request with comprehensive description linking to feature
-- Ensure all CI/CD checks pass and code coverage meets minimum thresholds
-- Merge feature branch to main branch upon approval
-
-# Step 7 - Final Verification and Workflow Completion
-- Call `mcp__aiconductor__verify_all_tasks_complete` to confirm all tasks are "Done"
-- **[UPDATED - Rec 1]** Call `mcp__aiconductor__get_workflow_snapshot` for final context-efficient overview
-- **[NEW - Rec 5]** Call `mcp__aiconductor__get_workflow_metrics` to get final health score:
-  - Verify healthScore is 80+ (good quality)
-  - Review rejection rates, rework cycles, and any alerts
-  - Document metrics in PR description
-- Review workflow history for each task:
-  - Stakeholder review cycle: PendingProductDirector → PendingArchitect → PendingUiUxExpert → PendingSecurityOfficer → ReadyForDevelopment
-  - Development cycle: ReadyForDevelopment → InProgress → InReview → InQA → Done
-  - Any refinement loops: NeedsChanges cycles (if applicable)
-- Generate detailed summary:
-  - All changes made (from file transitions)
-  - Stakeholder approvals summary
-  - Implementation details and test coverage
-  - Deployment readiness status
-  - Files modified (consolidated from all task transitions)
-  - **[NEW]** Workflow health metrics and quality indicators
-- Confirm all acceptance criteria are marked as met
-- Complete the workflow and report summary
-
+### 7 — Finalization
+1. `verify_all_tasks_complete(repoName, featureSlug)` — confirm all `Done`.
+2. `get_workflow_snapshot` — final overview.
+3. Create PR with feature summary and link to feature in dashboard.
