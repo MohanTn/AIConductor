@@ -1,16 +1,35 @@
 import React, { useState } from 'react';
 import { useAppState } from '../state/AppState';
-import { Task } from '../types';
+import { Task, TaskStatus } from '../types';
+import ResetDevModal from './ResetDevModal';
+import { exportPRD, exportArchitecture } from '../api/export.api';
 import styles from './ContentHeader.module.css';
+
+/** Statuses that indicate a task has entered the dev pipeline */
+const POST_DEV_STATUSES: TaskStatus[] = [
+  'ToDo',
+  'InProgress',
+  'InReview',
+  'InQA',
+  'Done',
+  'NeedsChanges',
+];
 
 interface ContentHeaderProps {
   featureTitle: string;
   tasks: Task[];
+  onResetComplete?: () => void;
 }
 
-const ContentHeader: React.FC<ContentHeaderProps> = ({ featureTitle, tasks }) => {
+const ContentHeader: React.FC<ContentHeaderProps> = ({ featureTitle, tasks, onResetComplete }) => {
   const { searchQuery, setSearchQuery, currentRepo, currentFeatureSlug } = useAppState();
   const [copied, setCopied] = useState(false);
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [exportingPrd, setExportingPrd] = useState(false);
+  const [exportingArch, setExportingArch] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  const hasPostDevTasks = tasks.some(t => POST_DEV_STATUSES.includes(t.status));
 
   const stats = React.useMemo(() => {
     const total = tasks.length;
@@ -25,6 +44,34 @@ const ContentHeader: React.FC<ContentHeaderProps> = ({ featureTitle, tasks }) =>
 
     return { total, done, inFlight, blocked, percent };
   }, [tasks]);
+
+  const handleExportPrd = async () => {
+    if (exportingPrd || !currentFeatureSlug) return;
+    setExportingPrd(true);
+    setExportError(null);
+    try {
+      await exportPRD(currentFeatureSlug, currentRepo);
+    } catch (err) {
+      setExportError('Failed to generate PRD — please try again');
+      setTimeout(() => setExportError(null), 6000);
+    } finally {
+      setExportingPrd(false);
+    }
+  };
+
+  const handleExportArch = async () => {
+    if (exportingArch || !currentFeatureSlug) return;
+    setExportingArch(true);
+    setExportError(null);
+    try {
+      await exportArchitecture(currentFeatureSlug, currentRepo);
+    } catch (err) {
+      setExportError('Failed to generate Architecture doc — please try again');
+      setTimeout(() => setExportError(null), 6000);
+    } finally {
+      setExportingArch(false);
+    }
+  };
 
   const handleCopy = async () => {
     const text = `repoName: ${currentRepo}, featureName: ${currentFeatureSlug}`;
@@ -86,6 +133,41 @@ const ContentHeader: React.FC<ContentHeaderProps> = ({ featureTitle, tasks }) =>
       </div>
 
       <div className={styles.contentHeaderRight}>
+        {exportError && (
+          <span className={styles.exportError} role="alert" aria-live="assertive">
+            {exportError}
+          </span>
+        )}
+        <button
+          className={styles.exportBtn}
+          onClick={handleExportPrd}
+          disabled={exportingPrd}
+          aria-label="Export Product Requirements Document as PDF"
+          aria-busy={exportingPrd}
+          title="Download Product Requirements Document"
+        >
+          {exportingPrd ? 'Generating PRD…' : '↓ Export PRD'}
+        </button>
+        <button
+          className={styles.exportBtn}
+          onClick={handleExportArch}
+          disabled={exportingArch}
+          aria-label="Export Architecture Document as PDF"
+          aria-busy={exportingArch}
+          title="Download Architecture Document"
+        >
+          {exportingArch ? 'Generating Architecture…' : '↓ Export Architecture'}
+        </button>
+        {hasPostDevTasks && (
+          <button
+            className={styles.resetDevBtn}
+            onClick={() => setShowResetModal(true)}
+            aria-label="Reset development workflow for this feature"
+            title="Reset all tasks to ReadyForDevelopment"
+          >
+            ↺ Reset Dev
+          </button>
+        )}
         <input
           type="search"
           className={styles.searchInput}
@@ -95,6 +177,19 @@ const ContentHeader: React.FC<ContentHeaderProps> = ({ featureTitle, tasks }) =>
           aria-label="Search tasks"
         />
       </div>
+
+      {showResetModal && (
+        <ResetDevModal
+          repoName={currentRepo}
+          featureSlug={currentFeatureSlug}
+          taskCount={tasks.length}
+          onClose={() => setShowResetModal(false)}
+          onSuccess={() => {
+            setShowResetModal(false);
+            onResetComplete?.();
+          }}
+        />
+      )}
     </div>
   );
 };

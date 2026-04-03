@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { QueueAPI, QueueItem } from '../api/queue.api.js';
 import { useAppState } from '../state/AppState.js';
+import { useWebSocket } from '../hooks/useWebSocket';
 import styles from './QueueAuditPanel.module.css';
 
 const STATUS_LABELS: Record<string, string> = {
@@ -67,9 +68,16 @@ const QueueAuditPanel: React.FC = () => {
 
   useEffect(() => {
     loadItems();
-    const interval = setInterval(loadItems, 10_000);
-    return () => clearInterval(interval);
   }, [loadItems]);
+
+  useWebSocket({
+    onMessage: useCallback((message: any) => {
+      if (message.type === 'task-status-changed') {
+        loadItems();
+      }
+    }, [loadItems]),
+    onConnect: loadItems,
+  });
 
   if (!currentFeatureSlug) return null;
 

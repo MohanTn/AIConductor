@@ -3,6 +3,7 @@
 > An open-source [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server that orchestrates multi-stakeholder feature refinement and development execution workflows for AI-assisted software teams.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![CI](https://github.com/MohanTn/aiconductor/actions/workflows/ci.yml/badge.svg)](https://github.com/MohanTn/aiconductor/actions/workflows/ci.yml)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](docker-compose.yml)
 [![Node.js](https://img.shields.io/badge/Node.js-20%2B-339933?logo=node.js&logoColor=white)](package.json)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5%2B-3178C6?logo=typescript&logoColor=white)](tsconfig.json)
@@ -262,8 +263,8 @@ src/
 npm install
 npm run dev          # Watch mode — recompiles on change
 npm run build        # Production build (server + client)
-npm test             # Run all tests
-npm run lint         # TypeScript lint
+npm test             # Run all tests with coverage
+npm run lint         # TypeScript and code quality lint
 npm run dashboard    # Start dashboard standalone (port 5111)
 ```
 
@@ -272,6 +273,16 @@ To rebuild the Docker image after code changes:
 ```bash
 docker compose up -d --build
 ```
+
+### CI/CD Pipeline
+
+All pull requests automatically run through our GitHub Actions CI workflow, which includes:
+- **Build** — TypeScript compilation with `npm run build`
+- **Lint** — Code quality checks with `npm run lint`
+- **Test** — Jest tests with coverage tracking via `npm test`
+- **Coverage** — Coverage metrics uploaded to Codecov
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for details on running these checks locally, understanding failures, and our branch protection rules.
 
 ---
 

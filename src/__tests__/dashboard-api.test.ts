@@ -37,15 +37,7 @@ describe('Dashboard API Logic Tests (T01)', () => {
     manager = new AIConductor(testDbPath);
     dbHandler = (manager as any).dbHandler as DatabaseHandler;
 
-    // Apply multi-repo migration
-    const migrationPath = path.join(
-      process.cwd(),
-      'src',
-      'migrations',
-      '001_add_multi_repo_support.sql'
-    );
-    const migrationSQL = fs.readFileSync(migrationPath, 'utf-8');
-    dbHandler['db'].exec(migrationSQL);
+    // Migration is applied automatically by DatabaseHandler constructor
 
     // Seed test data
     await manager.registerRepo({ repoName: REPO_NAME, repoPath: '/test/repo' });

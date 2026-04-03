@@ -27,7 +27,7 @@ export class CronScanner {
     if (this.running) return;
     this.running = true;
     this.scheduleNext();
-    console.error('[CronScanner] Started');
+    console.log('[CronScanner] Started');
   }
 
   /** Stop the cron loop gracefully. */
@@ -37,7 +37,7 @@ export class CronScanner {
       clearTimeout(this.intervalId);
       this.intervalId = null;
     }
-    console.error('[CronScanner] Stopped');
+    console.log('[CronScanner] Stopped');
   }
 
   /**
@@ -99,7 +99,7 @@ export class CronScanner {
       }
 
       if (enqueued > 0) {
-        console.error(`[CronScanner] Enqueued ${enqueued} feature(s)`);
+        console.log(`[CronScanner] Enqueued ${enqueued} feature(s)`);
       }
     } catch (err) {
       console.error('[CronScanner] Error during scan:', err);

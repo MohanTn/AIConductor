@@ -1,5 +1,6 @@
 import React from 'react';
 import { Task, Feature, AcceptanceCriterion, TestScenario, Clarification, RefinementStep, Attachment } from '../types';
+import SupplementaryArtefacts from './SupplementaryArtefacts';
 import styles from './DetailPanel.module.css';
 
 const STEP_NAMES: Record<number, string> = {
@@ -250,6 +251,9 @@ const DetailPanel: React.FC<DetailPanelProps> = ({ tasks, feature }) => {
             </div>
           )}
         </section>
+
+        {/* Supplementary Artefacts */}
+        <SupplementaryArtefacts artefacts={feature?.artefacts || []} />
 
         {/* Task Summary */}
         <section className={styles.section} role="region" aria-label="Task summary">

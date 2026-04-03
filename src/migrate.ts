@@ -31,7 +31,7 @@ async function migrate(workspaceRoot?: string, sourceDir?: string) {
   const features = await fs.readdir(artifactsPath);
   let migrated = 0;
   let skipped = 0;
-  let errors: string[] = [];
+  const errors: string[] = [];
 
   for (const featureSlug of features) {
     const featurePath = path.join(artifactsPath, featureSlug);

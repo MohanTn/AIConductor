@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAppState } from '../state/AppState';
 import { APIClient } from '../api/client';
+import { FeatureAPI } from '../api/features.api';
 import { Feature } from '../types';
 import ContentHeader from './ContentHeader';
 import Board from './Board';
@@ -70,16 +71,17 @@ const MainContent: React.FC = () => {
 
     setLoading(true);
     try {
-      const [summary, feature, details] = await Promise.all([
+      const [summary, feature, details, artefacts] = await Promise.all([
         APIClient.getTasks(currentRepo, currentFeatureSlug),
         APIClient.getFeature(currentRepo, currentFeatureSlug),
-        APIClient.getFeatureDetails(currentRepo, currentFeatureSlug).catch(() => null)
+        APIClient.getFeatureDetails(currentRepo, currentFeatureSlug).catch(() => null),
+        FeatureAPI.getArtefacts(currentRepo, currentFeatureSlug).catch(() => []),
       ]);
 
       setFeatureTitle(summary.featureTitle || currentFeatureSlug);
       setCurrentTasks(summary.tasks || []);
 
-      // Merge feature with details (AC, test scenarios, clarifications, steps, attachments)
+      // Merge feature with details (AC, test scenarios, clarifications, steps, attachments, artefacts)
       const featureWithDetails = {
         ...feature,
         acceptanceCriteria: details?.acceptanceCriteria || [],
@@ -88,6 +90,7 @@ const MainContent: React.FC = () => {
         clarifications: details?.clarifications || [],
         refinementSteps: details?.refinementSteps || [],
         attachments: details?.attachments || [],
+        artefacts,
       };
       setCurrentFeature(featureWithDetails);
       setShowEmpty(false);
@@ -154,6 +157,7 @@ const MainContent: React.FC = () => {
       <ContentHeader
         featureTitle={featureTitle}
         tasks={currentTasks}
+        onResetComplete={loadFeatureTasks}
       />
 
       <div className={styles.splitContainer} ref={splitContainerRef}>

@@ -32,7 +32,7 @@ export function createTaskRoutes(reviewManager: AIConductor): Router {
 
     if (!featureSlug || !task) throw new ValidationError('Feature slug and task data are required');
 
-    reviewManager['dbHandler'].addTask(featureSlug, task, repoName || 'default');
+    reviewManager.addTaskRecord(featureSlug, task, repoName || 'default');
     wsManager.broadcast({
       type: 'task-status-changed',
       action: 'created',
@@ -70,7 +70,7 @@ export function createTaskRoutes(reviewManager: AIConductor): Router {
 
     if (!featureSlug || !taskId) throw new ValidationError('Feature slug and task ID are required');
 
-    const taskFile = await reviewManager['dbHandler'].loadByFeatureSlug(featureSlug, repoName);
+    const taskFile = await reviewManager.loadByFeatureSlug(featureSlug, repoName);
     const task = taskFile.tasks.find((t: { taskId: string }) => t.taskId === taskId);
 
     if (!task) throw new NotFoundError(`Task not found: ${taskId}`);

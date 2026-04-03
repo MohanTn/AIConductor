@@ -18,7 +18,7 @@ export function createRefinementRoutes(reviewManager: AIConductor): Router {
 
     if (!featureSlug) throw new ValidationError('featureSlug is required');
 
-    const status = reviewManager['dbHandler'].getRefinementStatus(repoName, featureSlug);
+    const status = reviewManager.getRefinementStatusRecord(repoName, featureSlug);
     res.json({ success: true, ...status });
   }));
 
@@ -34,7 +34,7 @@ export function createRefinementRoutes(reviewManager: AIConductor): Router {
     if (completed === undefined) throw new ValidationError('completed is required');
     if (!summary) throw new ValidationError('summary is required');
 
-    const result = reviewManager['dbHandler'].updateRefinementStep(
+    const result = reviewManager.updateRefinementStepRecord(
       repoName, featureSlug, stepNumber, completed, summary, data
     );
 
@@ -51,7 +51,7 @@ export function createRefinementRoutes(reviewManager: AIConductor): Router {
     if (!featureSlug) throw new ValidationError('featureSlug is required');
     if (!criteria || !Array.isArray(criteria)) throw new ValidationError('criteria array is required');
 
-    const count = reviewManager['dbHandler'].addFeatureAcceptanceCriteria(
+    const count = reviewManager.addFeatureAcceptanceCriteriaRecord(
       repoName, featureSlug, criteria
     );
 
@@ -74,7 +74,7 @@ export function createRefinementRoutes(reviewManager: AIConductor): Router {
     if (!featureSlug) throw new ValidationError('featureSlug is required');
     if (!scenarios || !Array.isArray(scenarios)) throw new ValidationError('scenarios array is required');
 
-    const count = reviewManager['dbHandler'].addFeatureTestScenarios(
+    const count = reviewManager.addFeatureTestScenariosRecord(
       repoName, featureSlug, scenarios
     );
 
@@ -97,8 +97,8 @@ export function createRefinementRoutes(reviewManager: AIConductor): Router {
     if (!featureSlug) throw new ValidationError('featureSlug is required');
     if (!question) throw new ValidationError('question is required');
 
-    const result = reviewManager['dbHandler'].addClarification(
-      repoName, featureSlug, question, answer, askedBy
+    const result = reviewManager.addClarificationRecord(
+      repoName, featureSlug, question, answer, askedBy as 'llm' | 'user' | undefined
     );
 
     res.status(201).json({
@@ -131,8 +131,8 @@ export function createRefinementRoutes(reviewManager: AIConductor): Router {
     if (!attachmentType) throw new ValidationError('attachmentType is required');
     if (!analysisSummary) throw new ValidationError('analysisSummary is required');
 
-    const result = reviewManager['dbHandler'].addAttachmentAnalysis(
-      repoName, featureSlug, attachmentName, attachmentType, filePath, fileUrl, analysisSummary, extractedData
+    const result = reviewManager.addAttachmentAnalysisRecord(
+      repoName, featureSlug, attachmentName, attachmentType, analysisSummary, filePath, fileUrl, extractedData
     );
 
     res.status(201).json({

@@ -2,7 +2,7 @@
  * Feature API client
  */
 import { BaseClient } from './base.js';
-import { Feature } from '../types/index.js';
+import { Feature, FeatureArtefact } from '../types/index.js';
 
 export class FeatureAPI extends BaseClient {
   /**
@@ -60,6 +60,20 @@ export class FeatureAPI extends BaseClient {
   }
 
   /**
+   * Reset all tasks in a feature to ReadyForDevelopment so the dev-workflow
+   * can be re-run after post-release fixes.
+   */
+  static async resetDevWorkflow(
+    repoName: string,
+    featureSlug: string
+  ): Promise<{ success: boolean; tasksReset: number }> {
+    return this.request(
+      `${this.apiBase}/features/${encodeURIComponent(repoName)}/${encodeURIComponent(featureSlug)}/reset-dev`,
+      { method: 'POST' }
+    );
+  }
+
+  /**
    * Delete a feature
    */
   static async deleteFeature(repoName: string, featureSlug: string): Promise<any> {
@@ -67,5 +81,15 @@ export class FeatureAPI extends BaseClient {
       `${this.apiBase}/features/${encodeURIComponent(featureSlug)}?repoName=${encodeURIComponent(repoName)}`,
       { method: 'DELETE' }
     );
+  }
+
+  /**
+   * Get supplementary artefacts for a feature
+   */
+  static async getArtefacts(repoName: string, featureSlug: string): Promise<FeatureArtefact[]> {
+    const response = await this.request<{ success: boolean; artefacts: FeatureArtefact[] }>(
+      `${this.apiBase}/features/${encodeURIComponent(featureSlug)}/artefacts?repoName=${encodeURIComponent(repoName)}`
+    );
+    return response.artefacts || [];
   }
 }

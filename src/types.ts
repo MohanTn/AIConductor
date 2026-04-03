@@ -112,6 +112,14 @@ export interface StakeholderReview {
     notes: string;
     technologyRecommendations?: string[];
     designPatterns?: string[];
+    /** Mermaid flowchart TD syntax — mechanism description only, no credentials */
+    flowDiagram?: string;
+    /** Mermaid sequenceDiagram syntax */
+    sequentialCallsDiagram?: string;
+    /** Structured API contract description — method, path, request/response shape */
+    apiContracts?: string;
+    /** Auth mechanism description — MUST NOT contain actual credentials, keys, or secrets */
+    authDetails?: string;
   };
   uiUxExpert?: {
     approved: boolean;
@@ -170,6 +178,14 @@ export interface ReviewInput {
     // Architect
     technologyRecommendations?: string[];
     designPatterns?: string[];
+    /** Mermaid flowchart TD syntax */
+    flowDiagram?: string;
+    /** Mermaid sequenceDiagram syntax */
+    sequentialCallsDiagram?: string;
+    /** API contract description — endpoints, methods, request/response shapes */
+    apiContracts?: string;
+    /** Auth mechanism description — MUST NOT contain actual credentials or secrets */
+    authDetails?: string;
     // UI/UX Expert
     usabilityFindings?: string;
     accessibilityRequirements?: string[];
@@ -290,8 +306,18 @@ export const DEV_WORKFLOW_RULES: Record<TaskStatus, DevWorkflowRule> = {
   InReview: { allowedActors: ['codeReviewer'], allowedTransitions: ['InQA', 'NeedsChanges'] },
   InQA: { allowedActors: ['qa'], allowedTransitions: ['Done', 'NeedsChanges'] },
   NeedsChanges: { allowedActors: ['developer'], allowedTransitions: ['InProgress'] },
-  Done: { allowedActors: [], allowedTransitions: [] },
+  Done: { allowedActors: ['system'], allowedTransitions: ['ReadyForDevelopment'] },
 };
+
+export interface FeatureArtefact {
+  id: number;
+  repoName: string;
+  featureSlug: string;
+  artefactType: 'diagram' | 'api_contract' | 'data_model' | 'note';
+  title: string;
+  content: string;
+  createdAt: string;
+}
 
 // Tool input/output interfaces
 
