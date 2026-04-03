@@ -73,6 +73,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       throw new Error('Missing arguments');
     }
 
+    // ── Coerce JSON-string object params sent by MCP clients that serialize
+    //    nested objects as strings (e.g. Claude Code with additionalFields).
+    const toolSchema = TOOLS.find(t => t.name === name);
+    if (toolSchema?.inputSchema?.properties) {
+      for (const [key, propSchema] of Object.entries(toolSchema.inputSchema.properties as Record<string, { type?: string }>)) {
+        if (propSchema?.type === 'object' && typeof (args as Record<string, unknown>)[key] === 'string') {
+          try {
+            (args as Record<string, unknown>)[key] = JSON.parse((args as Record<string, unknown>)[key] as string);
+          } catch { /* leave as-is; AJV will report the type error */ }
+        }
+      }
+    }
+
     // ── AJV schema validation (T02): validate before dispatching ──────────
     const validate = TOOL_VALIDATORS.get(name);
     if (validate) {
