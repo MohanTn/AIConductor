@@ -9,7 +9,6 @@
 import { AIConductor } from './AIConductor.js';
 import { broadcastEvent as BroadcastFn } from './broadcast.js';
 import { WebSocketServerManager } from './websocket.js';
-import { ReviewInput } from './types.js';
 import {
   requireString,
   optionalString,
@@ -58,32 +57,6 @@ export function createToolHandlers(
       return wrapResult(result);
     }],
 
-    ['add_stakeholder_review', async (args) => {
-      const DECISIONS = ['approve', 'reject'] as const;
-      const input: ReviewInput = {
-        repoName: requireString(args, 'repoName'),
-        featureSlug: requireString(args, 'featureSlug'),
-        taskId: requireString(args, 'taskId'),
-        stakeholder: requireEnum(args, 'stakeholder', STAKEHOLDER_ROLES),
-        decision: requireEnum(args, 'decision', DECISIONS),
-        notes: requireString(args, 'notes'),
-        additionalFields: args.additionalFields as any,
-      };
-      const result = await reviewManager.addReview(input);
-      broadcast({
-        type: 'task-status-changed',
-        action: 'reviewed',
-        repoName: input.repoName || 'default',
-        featureSlug: input.featureSlug,
-        taskId: input.taskId,
-        stakeholder: input.stakeholder,
-        decision: input.decision,
-        newStatus: (result as any)?.task?.status,
-        timestamp: Date.now(),
-      }).catch(() => {});
-      return wrapResult(result);
-    }],
-
     ['get_task_status', async (args) => {
       const result = await reviewManager.getTaskStatus(
         requireString(args, 'repoName'),
@@ -108,16 +81,6 @@ export function createToolHandlers(
         requireString(args, 'taskId'),
         requireEnum(args, 'stakeholder', STAKEHOLDER_ROLES)
       );
-      return wrapResult(result);
-    }],
-
-    ['validate_review_completeness', async (args) => {
-      const result = await reviewManager.validateReviewCompleteness({
-        repoName: requireString(args, 'repoName'),
-        featureSlug: requireString(args, 'featureSlug'),
-        taskId: requireString(args, 'taskId'),
-        stakeholder: requireEnum(args, 'stakeholder', STAKEHOLDER_ROLES),
-      });
       return wrapResult(result);
     }],
 
@@ -223,16 +186,6 @@ export function createToolHandlers(
       const result = await reviewManager.getTaskExecutionPlan({
         repoName: requireString(args, 'repoName'),
         featureSlug: requireString(args, 'featureSlug'),
-      });
-      return wrapResult(result);
-    }],
-
-    ['get_similar_tasks', async (args) => {
-      const result = await reviewManager.getSimilarTasks({
-        repoName: requireString(args, 'repoName'),
-        featureSlug: requireString(args, 'featureSlug'),
-        taskId: requireString(args, 'taskId'),
-        limit: optionalNumber(args, 'limit'),
       });
       return wrapResult(result);
     }],
@@ -500,22 +453,6 @@ export function createToolHandlers(
           timestamp: Date.now(),
         });
       }
-      return wrapResult(result);
-    }],
-
-    ['add_attachment_analysis', async (args) => {
-      const result = await reviewManager.addAttachmentAnalysis({
-        repoName: requireString(args, 'repoName'),
-        featureSlug: requireString(args, 'featureSlug'),
-        attachmentName: requireString(args, 'attachmentName'),
-        attachmentType: requireEnum(args, 'attachmentType', [
-          'excel', 'image', 'document', 'design',
-        ] as const),
-        analysisSummary: requireString(args, 'analysisSummary'),
-        filePath: optionalString(args, 'filePath'),
-        fileUrl: optionalString(args, 'fileUrl'),
-        extractedData: args.extractedData as Record<string, any> | undefined,
-      });
       return wrapResult(result);
     }],
 

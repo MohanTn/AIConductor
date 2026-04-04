@@ -80,6 +80,7 @@ import {
   GetWorkflowContextResult,
   SubmitRoleBatchReviewInput,
   SubmitRoleBatchReviewResult,
+  TaskStatus,
 } from './types.js';
 import { DatabaseHandler } from './DatabaseHandler.js';
 import { WorkflowValidator } from './WorkflowValidator.js';
@@ -288,6 +289,130 @@ export class AIConductor {
 
   async getCurrentRepo(): Promise<GetCurrentRepoResult> {
     return this.featureService.getCurrentRepo();
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Legacy Dashboard Compatibility Helpers (route method names)
+  // ─────────────────────────────────────────────────────────────────────
+
+  getAllFeatures(repoName: string): any[] {
+    return this.dbHandler.getAllFeatures(repoName);
+  }
+
+  createFeatureRecord(featureSlug: string, featureName: string, repoName: string = 'default'): any {
+    try {
+      this.dbHandler.createFeature(featureSlug, featureName, repoName);
+      this.dbHandler.initializeRefinementSteps(repoName, featureSlug);
+      return { success: true, featureSlug, featureName, repoName };
+    } catch (error) {
+      return { success: false, error: (error as Error).message };
+    }
+  }
+
+  deleteFeatureRecord(featureSlug: string, repoName: string = 'default'): any {
+    try {
+      this.dbHandler.deleteFeature(featureSlug, repoName);
+      return { success: true, featureSlug, repoName };
+    } catch (error) {
+      return { success: false, error: (error as Error).message };
+    }
+  }
+
+  getFeatureAcceptanceCriteria(repoName: string, featureSlug: string): any[] {
+    return this.dbHandler.getFeatureAcceptanceCriteria(repoName, featureSlug);
+  }
+
+  getFeatureTestScenarios(repoName: string, featureSlug: string): any[] {
+    return this.dbHandler.getFeatureTestScenarios(repoName, featureSlug);
+  }
+
+  getRefinementSteps(repoName: string, featureSlug: string): any[] {
+    return this.dbHandler.getRefinementSteps(repoName, featureSlug);
+  }
+
+  getClarifications(repoName: string, featureSlug: string): any[] {
+    return this.dbHandler.getClarifications(repoName, featureSlug);
+  }
+
+  getAttachments(repoName: string, featureSlug: string): any[] {
+    return this.dbHandler.getAttachments(repoName, featureSlug);
+  }
+
+  addFeatureArtefact(
+    repoName: string,
+    featureSlug: string,
+    artefactType: string,
+    title: string,
+    content: string
+  ): { success: boolean; artefactId?: number; error?: string } {
+    try {
+      const artefactId = this.dbHandler.addFeatureArtefact(repoName, featureSlug, artefactType, title, content);
+      return { success: true, artefactId };
+    } catch (error) {
+      return { success: false, error: (error as Error).message };
+    }
+  }
+
+  getFeatureArtefacts(repoName: string, featureSlug: string, artefactType?: string): any[] {
+    return this.dbHandler.getFeatureArtefacts(repoName, featureSlug, artefactType);
+  }
+
+  deleteFeatureArtefact(repoName: string, featureSlug: string, artefactId: number): boolean {
+    return this.dbHandler.deleteFeatureArtefact(repoName, featureSlug, artefactId);
+  }
+
+  getRefinementStatusRecord(repoName: string, featureSlug: string): any {
+    const status = this.dbHandler.getRefinementStatus(repoName, featureSlug);
+    return { success: true, ...status };
+  }
+
+  updateRefinementStepRecord(
+    repoName: string,
+    featureSlug: string,
+    stepNumber: number,
+    completed: boolean,
+    summary: string,
+    data?: Record<string, any>
+  ): any {
+    return this.refinementService.updateRefinementStep({ repoName, featureSlug, stepNumber, completed, summary, data });
+  }
+
+  addFeatureAcceptanceCriteriaRecord(repoName: string, featureSlug: string, criteria: any[]): number {
+    return this.dbHandler.addFeatureAcceptanceCriteria(repoName, featureSlug, criteria);
+  }
+
+  addFeatureTestScenariosRecord(repoName: string, featureSlug: string, scenarios: any[]): number {
+    return this.dbHandler.addFeatureTestScenarios(repoName, featureSlug, scenarios);
+  }
+
+  addClarificationRecord(repoName: string, featureSlug: string, question: string, answer?: string, askedBy?: 'llm' | 'user' | undefined): number {
+    return this.dbHandler.addClarification(repoName, featureSlug, question, answer, askedBy);
+  }
+
+  addAttachmentAnalysisRecord(
+    repoName: string,
+    featureSlug: string,
+    attachmentName: string,
+    attachmentType: string,
+    analysisSummary: string,
+    filePath?: string,
+    fileUrl?: string,
+    extractedData?: any
+  ): number {
+    return this.dbHandler.addAttachmentAnalysis(repoName, featureSlug, attachmentName, attachmentType, analysisSummary, filePath, fileUrl, extractedData);
+  }
+
+  addTaskRecord(featureSlug: string, task: any, repoName: string = 'default'): any {
+    try {
+      const taskId = this.dbHandler.addTask(featureSlug, task, repoName);
+      return { success: true, taskId };
+    } catch (error) {
+      return { success: false, error: (error as Error).message };
+    }
+  }
+
+  async loadByFeatureSlug(featureSlug: string, repoName: string = 'default'): Promise<any> {
+    return this.dbHandler.loadByFeatureSlug(featureSlug, repoName);
   }
 
   // ─────────────────────────────────────────────────────────────────────
