@@ -59,7 +59,7 @@ Add detailed analysis including:
 - marketAnalysis: Include market size, growth trends, demand signals, and ROI justification
 - competitorAnalysis: Include 3+ competitors analyzed, their features, pricing, user sentiment, and how this feature differentiates
 
-## When calling add_stakeholder_review, pass these additionalFields:
+## When calling submit_role_batch_review, pass these additionalFields:
 | Field | Type | Description |
 |---|---|---|
 | \`marketAnalysis\` | \`string\` | Market size, demand signals, ROI justification |
@@ -138,7 +138,7 @@ Add detailed analysis including:
 - designPatterns: For each pattern, include: pattern name, justification, implementation approach, how it solves the architectural problem, and known tradeoffs
 - Additional: Add technical feasibility assessment, scalability analysis, and implementation risk mitigation strategies
 
-## When calling add_stakeholder_review, pass these additionalFields:
+## When calling submit_role_batch_review, pass these additionalFields:
 | Field | Type | Description |
 |---|---|---|
 | \`technologyRecommendations\` | \`string[]\` | Array — one entry per recommended tool/library |
@@ -239,7 +239,7 @@ Add detailed analysis including:
 - accessibilityRequirements: Detailed WCAG 2.1 AA requirements, screen reader support, keyboard navigation, color contrast specs
 - userBehaviorInsights: User mental models, common interaction patterns, expectations, and how to guide users effectively
 
-## When calling add_stakeholder_review, pass these additionalFields:
+## When calling submit_role_batch_review, pass these additionalFields:
 | Field | Type | Description |
 |---|---|---|
 | \`usabilityFindings\` | \`string\` | Learnability, efficiency, error prevention findings |
@@ -277,7 +277,7 @@ Add detailed analysis including:
 ## Required Output:
 Add your analysis as structured notes including securityRequirements and complianceNotes fields.
 
-## When calling add_stakeholder_review, pass these additionalFields:
+## When calling submit_role_batch_review, pass these additionalFields:
 | Field | Type | Description |
 |---|---|---|
 | \`securityRequirements\` | \`string[]\` | Array — one entry per required security control |

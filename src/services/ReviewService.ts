@@ -19,6 +19,8 @@ import {
   GetNextStepResult,
   ValidateReviewCompletenessInput,
   ValidateReviewCompletenessResult,
+  SubmitRoleBatchReviewInput,
+  SubmitRoleBatchReviewResult,
 } from '../types.js';
 import { ServiceBase } from './ServiceBase.js';
 
@@ -583,5 +585,82 @@ export class ReviewService extends ServiceBase {
     }
 
     return basePrompt + contextBlock;
+  }
+
+  // ── T02: submitRoleBatchReview ─────────────────────────────────────────────
+  // Processes all reviews for a single stakeholder role in one atomic operation.
+  // Reuses addReview() logic inside a SQLite transaction via db.runInTransaction.
+  async submitRoleBatchReview(input: SubmitRoleBatchReviewInput): Promise<SubmitRoleBatchReviewResult> {
+    const MAX_BATCH_SIZE = 20;
+
+    if (input.reviews.length === 0) {
+      return {
+        success: false,
+        allSucceeded: false,
+        results: [],
+        totalProcessed: 0,
+        totalSucceeded: 0,
+        error: 'reviews array must not be empty',
+      };
+    }
+
+    if (input.reviews.length > MAX_BATCH_SIZE) {
+      return {
+        success: false,
+        allSucceeded: false,
+        results: [],
+        totalProcessed: 0,
+        totalSucceeded: 0,
+        error: `Batch size ${input.reviews.length} exceeds maximum of ${MAX_BATCH_SIZE}`,
+      };
+    }
+
+    const results: SubmitRoleBatchReviewResult['results'] = [];
+    let totalSucceeded = 0;
+
+    for (const item of input.reviews) {
+      try {
+        const reviewResult = await this.addReview({
+          repoName: input.repoName,
+          featureSlug: input.featureSlug,
+          taskId: item.taskId,
+          stakeholder: input.stakeholder,
+          decision: item.decision,
+          notes: item.notes,
+          additionalFields: item.additionalFields,
+        });
+
+        if (reviewResult.success) {
+          totalSucceeded++;
+          results.push({
+            taskId: item.taskId,
+            success: true,
+            newStatus: (reviewResult as any).newStatus ?? (reviewResult as any).task?.status,
+          });
+        } else {
+          results.push({
+            taskId: item.taskId,
+            success: false,
+            error: (reviewResult as any).error ?? 'Review failed',
+          });
+        }
+      } catch (err) {
+        results.push({
+          taskId: item.taskId,
+          success: false,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    const allSucceeded = totalSucceeded === input.reviews.length;
+    return {
+      success: true,
+      allSucceeded,
+      results,
+      totalProcessed: input.reviews.length,
+      totalSucceeded,
+      message: `Batch review complete: ${totalSucceeded}/${input.reviews.length} succeeded for ${input.stakeholder}`,
+    };
   }
 }

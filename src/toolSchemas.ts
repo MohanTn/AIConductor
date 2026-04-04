@@ -27,66 +27,9 @@ export const TOOLS = [
     },
   },
   {
-    name: 'add_stakeholder_review',
-    description:
-      'Add a stakeholder review to a task. Updates task status based on approval/rejection and enforces workflow state machine rules.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        repoName: {
-          type: 'string',
-          description: 'Repository name',
-        },
-        featureSlug: {
-          type: 'string',
-          description: 'Feature slug name',
-        },
-        taskId: {
-          type: 'string',
-          description: 'Unique task identifier (e.g., T01, T02)',
-        },
-        stakeholder: {
-          type: 'string',
-          enum: ['productDirector', 'architect', 'uiUxExpert', 'securityOfficer'],
-          description: 'Stakeholder role performing the review',
-        },
-        decision: {
-          type: 'string',
-          enum: ['approve', 'reject'],
-          description: 'Review decision (approve transitions forward, reject sends to NeedsRefinement)',
-        },
-        notes: {
-          type: 'string',
-          description: 'Review notes from the stakeholder',
-        },
-        additionalFields: {
-          type: 'object',
-          description: 'Role-specific additional fields',
-          properties: {
-            quickSummary: { type: 'string', description: 'Brief 1-2 sentence TL;DR of the review (Rec 6)' },
-            marketAnalysis: { type: 'string' },
-            competitorAnalysis: { type: 'string' },
-            technologyRecommendations: { type: 'array', items: { type: 'string' } },
-            designPatterns: { type: 'array', items: { type: 'string' } },
-            flowDiagram: { type: 'string', description: 'Mermaid flowchart TD syntax showing system architecture and component interactions' },
-            sequentialCallsDiagram: { type: 'string', description: 'Mermaid sequenceDiagram syntax showing step-by-step service call sequences' },
-            apiContracts: { type: 'string', description: 'Structured text listing API endpoints: method, path, request body, response body, status codes' },
-            authDetails: { type: 'string', description: 'Auth mechanism description only — e.g. Bearer JWT. NEVER include actual credentials or secrets' },
-            usabilityFindings: { type: 'string' },
-            accessibilityRequirements: { type: 'array', items: { type: 'string' } },
-            userBehaviorInsights: { type: 'string' },
-            securityRequirements: { type: 'array', items: { type: 'string' } },
-            complianceNotes: { type: 'string' },
-          },
-        },
-      },
-      required: ['repoName', 'featureSlug', 'taskId', 'stakeholder', 'decision', 'notes'],
-    },
-  },
-  {
     name: 'get_task_status',
     description:
-      'Get the current status of a specific task including which stakeholders have reviewed it and what transitions are allowed.',
+      '[DEBUG TOOL] Get the current status of a specific task including which stakeholders have reviewed it and what transitions are allowed. Use get_workflow_context instead for programmatic workflow queries.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -128,7 +71,7 @@ export const TOOLS = [
   {
     name: 'validate_workflow',
     description:
-      'Validate if a stakeholder can perform a review on a task without modifying any data. Use this before calling add_stakeholder_review.',
+      'Validate if a stakeholder can perform a review on a task without modifying any data. Use this before calling submit_role_batch_review.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -793,50 +736,6 @@ export const TOOLS = [
     },
   },
   {
-    name: 'add_attachment_analysis',
-    description:
-      'Add analysis of an attachment (screenshot, document, etc.). Used in Step 2 of refinement workflow.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        repoName: {
-          type: 'string',
-          description: 'Repository name',
-        },
-        featureSlug: {
-          type: 'string',
-          description: 'Feature slug',
-        },
-        attachmentName: {
-          type: 'string',
-          description: 'Name of the attachment',
-        },
-        attachmentType: {
-          type: 'string',
-          enum: ['excel', 'image', 'document', 'design'],
-          description: 'Type of attachment',
-        },
-        analysisSummary: {
-          type: 'string',
-          description: 'Summary of the analysis',
-        },
-        filePath: {
-          type: 'string',
-          description: 'Optional local file path',
-        },
-        fileUrl: {
-          type: 'string',
-          description: 'Optional URL to the file',
-        },
-        extractedData: {
-          type: 'object',
-          description: 'Optional extracted data as key-value pairs',
-        },
-      },
-      required: ['repoName', 'featureSlug', 'attachmentName', 'attachmentType', 'analysisSummary'],
-    },
-  },
-  {
     name: 'get_refinement_status',
     description:
       'Get comprehensive status of feature refinement including all steps, criteria, scenarios, and progress percentage.',
@@ -1066,87 +965,51 @@ export const TOOLS = [
     },
   },
   {
-    name: 'validate_review_completeness',
+    name: 'get_workflow_context',
     description:
-      'Validate that all required fields are present for a stakeholder review before submission. Prevents incomplete reviews from being submitted.',
+      'Single-call orientation tool. Returns current pipeline phase, role, system prompt, pending task IDs, all task summaries, and a nextAction hint. Replaces get_next_step + get_workflow_snapshot + get_tasks_by_status in one call.',
     inputSchema: {
       type: 'object',
       properties: {
         repoName: { type: 'string', description: 'Repository name' },
         featureSlug: { type: 'string', description: 'Feature slug name' },
-        taskId: { type: 'string', description: 'Task ID' },
+      },
+      required: ['repoName', 'featureSlug'],
+    },
+  },
+  {
+    name: 'submit_role_batch_review',
+    description:
+      'Submit stakeholder reviews for multiple tasks in one call. All reviews must be for the same stakeholder role. Max 20 items per batch. Returns per-task results with allSucceeded flag.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        repoName: { type: 'string', description: 'Repository name' },
+        featureSlug: { type: 'string', description: 'Feature slug name' },
         stakeholder: {
           type: 'string',
           enum: ['productDirector', 'architect', 'uiUxExpert', 'securityOfficer'],
-          description: 'Stakeholder role',
+          description: 'Stakeholder role for all reviews in this batch. Do NOT mix roles in one call.',
+        },
+        reviews: {
+          type: 'array',
+          description: 'Array of reviews (max 20). Each review includes taskId, decision, notes, and optional role-specific additionalFields.',
+          items: {
+            type: 'object',
+            properties: {
+              taskId: { type: 'string', description: 'Task ID (e.g. T01)' },
+              decision: { type: 'string', enum: ['approve', 'reject'] },
+              notes: { type: 'string', description: 'Review notes for this task' },
+              additionalFields: {
+                type: 'object',
+                description: 'Role-specific fields. Do NOT include PII, credentials, or API keys.',
+              },
+            },
+            required: ['taskId', 'decision', 'notes'],
+          },
         },
       },
-      required: ['repoName', 'featureSlug', 'taskId', 'stakeholder'],
-    },
-  },
-  {
-    name: 'get_similar_tasks',
-    description:
-      'Find similar tasks across other features. Useful for finding examples and estimating task complexity based on past work.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        repoName: { type: 'string', description: 'Repository name' },
-        featureSlug: { type: 'string', description: 'Feature slug name' },
-        taskId: { type: 'string', description: 'Reference task ID' },
-        limit: {
-          type: 'number',
-          description: 'Maximum number of similar tasks to return (default: 5)',
-        },
-      },
-      required: ['repoName', 'featureSlug', 'taskId'],
-    },
-  },
-  {
-    name: 'add_feature_artefact',
-    description:
-      'Add a supplementary artefact (Mermaid diagram, API contract, data model, or free-form note) to a feature. ' +
-      'Can be called after refinement is complete to enrich the feature spec as a living document. ' +
-      'Do NOT include credentials, API keys, or secrets in content fields.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        repoName: { type: 'string', description: 'Repository name' },
-        featureSlug: { type: 'string', description: 'Feature slug name' },
-        artefactType: {
-          type: 'string',
-          enum: ['diagram', 'api_contract', 'data_model', 'note'],
-          description: 'Type of artefact: diagram (Mermaid source), api_contract (OpenAPI/JSON), data_model (schema definition), note (free-form text)',
-        },
-        title: {
-          type: 'string',
-          description: 'Short descriptive title for this artefact (max 500 chars)',
-          maxLength: 500,
-        },
-        content: {
-          type: 'string',
-          description: 'The artefact content — Mermaid source, API spec, schema definition, or notes (max 100,000 chars)',
-          maxLength: 100000,
-        },
-      },
-      required: ['repoName', 'featureSlug', 'artefactType', 'title', 'content'],
-    },
-  },
-  {
-    name: 'get_feature_artefacts',
-    description: 'Get supplementary artefacts stored for a feature. Optionally filter by type.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        repoName: { type: 'string', description: 'Repository name' },
-        featureSlug: { type: 'string', description: 'Feature slug name' },
-        artefactType: {
-          type: 'string',
-          enum: ['diagram', 'api_contract', 'data_model', 'note'],
-          description: 'Optional: filter by artefact type',
-        },
-      },
-      required: ['repoName', 'featureSlug'],
+      required: ['repoName', 'featureSlug', 'stakeholder', 'reviews'],
     },
   },
 ];
