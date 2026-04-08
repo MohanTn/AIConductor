@@ -43,12 +43,10 @@ const REPO_NAME = 'test-repo';
 const FEATURE_SLUG = 'test-feature';
 const FEATURE_NAME = 'Test Feature';
 
-/** Runs all 4 stakeholder approvals with minimum required fields so the task reaches ReadyForDevelopment. */
+/** Single-stage refinement: one approval from product director moves to ReadyForDevelopment. */
 async function approveAllStakeholders(manager: AIConductor, repoName: string, featureSlug: string, taskId: string) {
+  // Single-stage refinement: just one approval needed
   await manager.addReview({ repoName, featureSlug, taskId, stakeholder: 'productDirector', decision: 'approve', notes: 'Approved - market demand confirmed and feature scope is well-defined', additionalFields: { marketAnalysis: 'Market demand confirmed', competitorAnalysis: 'Competitor gap identified' } });
-  await manager.addReview({ repoName, featureSlug, taskId, stakeholder: 'architect', decision: 'approve', notes: 'Architecture approved - patterns and technical approach are sound', additionalFields: { technologyRecommendations: ['TypeScript', 'SQLite'], designPatterns: ['Repository Pattern'] } });
-  await manager.addReview({ repoName, featureSlug, taskId, stakeholder: 'uiUxExpert', decision: 'approve', notes: 'Design approved - usability and accessibility requirements are met', additionalFields: { usabilityFindings: 'Interface is clean and intuitive', accessibilityRequirements: ['WCAG 2.1 AA'] } });
-  await manager.addReview({ repoName, featureSlug, taskId, stakeholder: 'securityOfficer', decision: 'approve', notes: 'Security checks passed - all OWASP requirements verified and compliant', additionalFields: { securityRequirements: ['Input validation required'], complianceNotes: 'OWASP guidelines followed' } });
 }
 
 /**
@@ -505,10 +503,9 @@ describe('All MCP Tools - Comprehensive Test Suite', () => {
       const result = await manager.getTaskStatus(REPO_NAME, FEATURE_SLUG, 'T01');
 
       expect(result.taskId).toBe('T01');
-      expect(result.status).toBe('PendingProductDirector');
-      expect(result.currentStakeholder).toBe('productDirector');
-      expect(result.pendingReviews).toContain('productDirector');
-      expect(result.canTransitionTo).toContain('PendingArchitect');
+      expect(result.status).toBe('InRefinement');
+      expect(result.currentStakeholder).toBe(null);  // Single-stage refinement has no role
+      expect(result.canTransitionTo).toContain('ReadyForDevelopment');
       expect(result.canTransitionTo).toContain('NeedsRefinement');
       expect(result.orderOfExecution).toBe(1);
     });
@@ -540,10 +537,9 @@ describe('All MCP Tools - Comprehensive Test Suite', () => {
 
       expect(result.featureSlug).toBe(FEATURE_SLUG);
       expect(result.totalTasks).toBe(2);
-      expect(result.tasksByStatus.PendingProductDirector).toBe(2);
+      expect(result.tasksByStatus.InRefinement).toBe(2);
       expect(result.completionPercentage).toBe(0);
       expect(result.tasks.length).toBe(2);
-      expect(result.stakeholderProgress.productDirector.pending).toBe(2);
     });
 
     test('should reflect completion after approvals', async () => {
@@ -571,7 +567,7 @@ describe('All MCP Tools - Comprehensive Test Suite', () => {
 
       expect(result.valid).toBe(true);
       expect(result.expectedStakeholder).toBe('productDirector');
-      expect(result.allowedTransitions).toContain('PendingArchitect');
+      expect(result.allowedTransitions).toContain('ReadyForDevelopment');
     });
 
     test('should reject wrong stakeholder', async () => {
@@ -597,7 +593,7 @@ describe('All MCP Tools - Comprehensive Test Suite', () => {
       await setupFullEnvironment(manager, dbHandler);
     });
 
-    test('should approve and transition to next stakeholder', async () => {
+    test('should approve and transition to ReadyForDevelopment', async () => {
       const result = await manager.addReview({
         repoName: REPO_NAME, featureSlug: FEATURE_SLUG, taskId: 'T01',
         stakeholder: 'productDirector',
@@ -610,8 +606,8 @@ describe('All MCP Tools - Comprehensive Test Suite', () => {
       });
 
       expect(result.success).toBe(true);
-      expect(result.previousStatus).toBe('PendingProductDirector');
-      expect(result.newStatus).toBe('PendingArchitect');
+      expect(result.previousStatus).toBe('InRefinement');
+      expect(result.newStatus).toBe('ReadyForDevelopment');
     });
 
     test('should reject and move to NeedsRefinement', async () => {
@@ -639,43 +635,12 @@ describe('All MCP Tools - Comprehensive Test Suite', () => {
       expect(result.error).toContain('Workflow validation failed');
     });
 
-    test('should complete full stakeholder review cycle', async () => {
-      // Product Director approves
-      let result = await manager.addReview({
+    test('should complete single-stage refinement review', async () => {
+      // Single-stage refinement: Product Director approval moves directly to ReadyForDevelopment
+      const result = await manager.addReview({
         repoName: REPO_NAME, featureSlug: FEATURE_SLUG, taskId: 'T01',
         stakeholder: 'productDirector', decision: 'approve', notes: 'Approved - all requirements verified and implementation looks correct',
         additionalFields: { marketAnalysis: 'Good', competitorAnalysis: 'None' },
-      });
-      expect(result.newStatus).toBe('PendingArchitect');
-
-      // Architect approves
-      result = await manager.addReview({
-        repoName: REPO_NAME, featureSlug: FEATURE_SLUG, taskId: 'T01',
-        stakeholder: 'architect', decision: 'approve', notes: 'Architecture approved - patterns and technical approach are sound',
-        additionalFields: { technologyRecommendations: ['React', 'Node'], designPatterns: ['MVC'] },
-      });
-      expect(result.newStatus).toBe('PendingUiUxExpert');
-
-      // UI/UX Expert approves
-      result = await manager.addReview({
-        repoName: REPO_NAME, featureSlug: FEATURE_SLUG, taskId: 'T01',
-        stakeholder: 'uiUxExpert', decision: 'approve', notes: 'Design approved - usability and accessibility requirements are met',
-        additionalFields: {
-          usabilityFindings: 'Clean layout',
-          accessibilityRequirements: ['WCAG 2.1 AA'],
-          userBehaviorInsights: 'Users prefer social login',
-        },
-      });
-      expect(result.newStatus).toBe('PendingSecurityOfficer');
-
-      // Security Officer approves
-      result = await manager.addReview({
-        repoName: REPO_NAME, featureSlug: FEATURE_SLUG, taskId: 'T01',
-        stakeholder: 'securityOfficer', decision: 'approve', notes: 'Security checks passed - all OWASP requirements verified and compliant',
-        additionalFields: {
-          securityRequirements: ['HTTPS required', 'Rate limiting'],
-          complianceNotes: 'GDPR compliant',
-        },
       });
       expect(result.newStatus).toBe('ReadyForDevelopment');
     });
@@ -731,8 +696,8 @@ describe('All MCP Tools - Comprehensive Test Suite', () => {
         repoName: REPO_NAME, featureSlug: FEATURE_SLUG, taskId: 'T01',
       });
 
-      expect(result.nextRole).toBe('architect');
-      expect(result.currentStatus).toBe('PendingArchitect');
+      expect(result.nextRole).toBe('developer');
+      expect(result.currentStatus).toBe('ReadyForDevelopment');
       expect(result.previousRoleNotes).toHaveProperty('productDirector');
     });
 
