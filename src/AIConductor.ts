@@ -80,6 +80,8 @@ import {
   GetWorkflowContextResult,
   SubmitRoleBatchReviewInput,
   SubmitRoleBatchReviewResult,
+  SubmitRefinementResearchInput,
+  SubmitRefinementResearchResult,
   TaskStatus,
 } from './types.js';
 import { DatabaseHandler } from './DatabaseHandler.js';
@@ -580,5 +582,10 @@ export class AIConductor {
   // ── T02: submit_role_batch_review ─────────────────────────────────────────
   async submitRoleBatchReview(input: SubmitRoleBatchReviewInput): Promise<SubmitRoleBatchReviewResult> {
     return this.reviewService.submitRoleBatchReview(input);
+  }
+
+  // ── T04: submit_refinement_research (single-stage refinement) ─────────────
+  async submitRefinementResearch(input: SubmitRefinementResearchInput): Promise<SubmitRefinementResearchResult> {
+    return this.reviewService.submitRefinementResearch(input);
   }
 }

@@ -3,10 +3,7 @@
  */
 
 export type TaskStatus =
-  | 'PendingProductDirector'
-  | 'PendingArchitect'
-  | 'PendingUiUxExpert'
-  | 'PendingSecurityOfficer'
+  | 'InRefinement'
   | 'ReadyForDevelopment'
   | 'NeedsRefinement'
   | 'ToDo'
@@ -14,7 +11,12 @@ export type TaskStatus =
   | 'InReview'
   | 'InQA'
   | 'NeedsChanges'
-  | 'Done';
+  | 'Done'
+  // @deprecated — use InRefinement instead
+  | 'PendingProductDirector'
+  | 'PendingArchitect'
+  | 'PendingUiUxExpert'
+  | 'PendingSecurityOfficer';
 
 export type StakeholderRole = 'productDirector' | 'architect' | 'uiUxExpert' | 'securityOfficer';
 
@@ -254,38 +256,30 @@ export interface WorkflowRule {
 }
 
 export const WORKFLOW_RULES: Record<TaskStatus, WorkflowRule | null> = {
-  PendingProductDirector: {
-    expectedStakeholder: 'productDirector',
-    onApprove: 'PendingArchitect',
-    onReject: 'NeedsRefinement',
-    allowedPreviousStatuses: ['PendingProductDirector', 'NeedsRefinement'],
-  },
-  PendingArchitect: {
-    expectedStakeholder: 'architect',
-    onApprove: 'PendingUiUxExpert',
-    onReject: 'NeedsRefinement',
-    allowedPreviousStatuses: ['PendingProductDirector'],
-  },
-  PendingUiUxExpert: {
-    expectedStakeholder: 'uiUxExpert',
-    onApprove: 'PendingSecurityOfficer',
-    onReject: 'NeedsRefinement',
-    allowedPreviousStatuses: ['PendingArchitect'],
-  },
-  PendingSecurityOfficer: {
-    expectedStakeholder: 'securityOfficer',
+  InRefinement: {
+    expectedStakeholder: 'productDirector', // Placeholder; single-stage doesn't use stakeholders
     onApprove: 'ReadyForDevelopment',
     onReject: 'NeedsRefinement',
-    allowedPreviousStatuses: ['PendingUiUxExpert'],
+    allowedPreviousStatuses: ['InRefinement', 'NeedsRefinement'],
   },
   ReadyForDevelopment: null,
-  NeedsRefinement: null,
+  NeedsRefinement: {
+    expectedStakeholder: 'productDirector', // Placeholder
+    onApprove: 'InRefinement',
+    onReject: 'NeedsRefinement',
+    allowedPreviousStatuses: ['InRefinement'],
+  },
   ToDo: null,
   InProgress: null,
   InReview: null,
   InQA: null,
   NeedsChanges: null,
   Done: null,
+  // Deprecated statuses — kept for migration only
+  PendingProductDirector: null,
+  PendingArchitect: null,
+  PendingUiUxExpert: null,
+  PendingSecurityOfficer: null,
 };
 
 // Development workflow transition rules
@@ -295,18 +289,20 @@ export interface DevWorkflowRule {
 }
 
 export const DEV_WORKFLOW_RULES: Record<TaskStatus, DevWorkflowRule> = {
-  PendingProductDirector: { allowedActors: ['productDirector', 'system'], allowedTransitions: ['PendingArchitect', 'NeedsRefinement'] },
-  PendingArchitect: { allowedActors: ['architect', 'system'], allowedTransitions: ['PendingUiUxExpert', 'NeedsRefinement'] },
-  PendingUiUxExpert: { allowedActors: ['uiUxExpert', 'system'], allowedTransitions: ['PendingSecurityOfficer', 'NeedsRefinement'] },
-  PendingSecurityOfficer: { allowedActors: ['securityOfficer', 'system'], allowedTransitions: ['ReadyForDevelopment', 'NeedsRefinement'] },
+  InRefinement: { allowedActors: ['system'], allowedTransitions: ['ReadyForDevelopment', 'NeedsRefinement'] },
   ReadyForDevelopment: { allowedActors: ['developer', 'system'], allowedTransitions: ['InProgress', 'ToDo'] },
-  NeedsRefinement: { allowedActors: ['system'], allowedTransitions: ['PendingProductDirector'] },
+  NeedsRefinement: { allowedActors: ['system'], allowedTransitions: ['InRefinement'] },
   ToDo: { allowedActors: ['system', 'developer'], allowedTransitions: ['InProgress'] },
   InProgress: { allowedActors: ['developer'], allowedTransitions: ['InReview'] },
   InReview: { allowedActors: ['codeReviewer'], allowedTransitions: ['InQA', 'NeedsChanges'] },
   InQA: { allowedActors: ['qa'], allowedTransitions: ['Done', 'NeedsChanges'] },
   NeedsChanges: { allowedActors: ['developer'], allowedTransitions: ['InProgress'] },
   Done: { allowedActors: ['system'], allowedTransitions: ['ReadyForDevelopment'] },
+  // Deprecated statuses for migration
+  PendingProductDirector: { allowedActors: ['system'], allowedTransitions: ['InRefinement'] },
+  PendingArchitect: { allowedActors: ['system'], allowedTransitions: ['InRefinement'] },
+  PendingUiUxExpert: { allowedActors: ['system'], allowedTransitions: ['InRefinement'] },
+  PendingSecurityOfficer: { allowedActors: ['system'], allowedTransitions: ['InRefinement'] },
 };
 
 export interface FeatureArtefact {
@@ -1326,6 +1322,25 @@ export interface SubmitRoleBatchReviewResult {
   results: BatchReviewItemResult[];
   totalProcessed: number;
   totalSucceeded: number;
+  message?: string;
+  error?: string;
+}
+
+// Single-stage refinement (T04)
+export interface SubmitRefinementResearchInput {
+  repoName: string;
+  featureSlug: string;
+  productResearchSummary: string;
+  architectureResearchSummary: string;
+  uiUxResearchSummary: string;
+  securityResearchSummary: string;
+  taskNotes?: Array<{ taskId: string; notes: string }>;
+}
+
+export interface SubmitRefinementResearchResult {
+  success: boolean;
+  featureSlug: string;
+  tasksTransitioned: number;
   message?: string;
   error?: string;
 }
