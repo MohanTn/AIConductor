@@ -1,157 +1,102 @@
+.boardHeader {
+  flex-shrink: 0;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--bg);
+}
+
+.boardTitle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+}
+
+.boardTitle h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.boardStats {
+  font-size: 12px;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.progressInfo {
+  font-weight: 500;
+  color: var(--text);
+}
+
 .boardContainer {
   flex: 1;
-  overflow-y: auto;
+  overflow: hidden;
   background: var(--bg);
   padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-}
-
-/* ── Swimlane ─────────────────────────────────────────────── */
-.swimlane {
-  display: flex;
-  flex-direction: column;
-}
-
-.swimlaneHeader {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  background: none;
-  border: none;
-  border-bottom: 2px solid var(--border-light);
-  padding: 6px 4px;
-  cursor: pointer;
-  text-align: left;
-  color: var(--text);
-  transition: background 0.1s;
-}
-
-.swimlaneHeader:hover {
-  background: rgba(0, 0, 0, 0.03);
-}
-
-.swimlaneHeader:focus-visible {
-  outline: 2px solid var(--primary, #2196f3);
-  outline-offset: 2px;
-}
-
-.swimlaneChevron {
-  font-size: 14px;
-  color: var(--text-secondary);
-  transition: transform 0.2s ease;
-  display: inline-block;
-  line-height: 1;
-  flex-shrink: 0;
-}
-
-.swimlaneChevronCollapsed {
-  transform: rotate(-90deg);
-}
-
-.swimlaneLabel {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  flex: 1;
-}
-
-.swimlaneCount {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-muted);
-  background: rgba(0, 0, 0, 0.05);
-  padding: 2px 8px;
-  border-radius: 10px;
-  flex-shrink: 0;
-}
-
-.swimlaneBody {
-  overflow: hidden;
-  max-height: 4000px;
-  transition: max-height 0.2s ease;
-}
-
-.swimlaneBodyCollapsed {
-  max-height: 0;
 }
 
 .board {
   display: flex;
   gap: 8px;
   flex: 1;
-  overflow-x: hidden;
+  overflow-x: auto;
   overflow-y: hidden;
   min-height: 0;
+  min-width: 0;
+  padding-right: 8px;
 }
 
-/* Active (non-empty) column — grows to fill available space */
+.board::-webkit-scrollbar {
+  height: 6px;
+}
+
+.board::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 3px;
+}
+
+.board::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 3px;
+}
+
+.board::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+/* Kanban column */
 .column {
-  flex: 1 1 160px;
-  min-width: 140px;
-  max-width: 300px;
+  flex: 0 0 280px;
+  min-width: 280px;
+  max-height: 100%;
   background: var(--column-bg);
   border-radius: 3px;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  max-height: 100%;
+  border: 1px solid var(--border-light);
 }
 
-/* Collapsed (empty) column — shrinks to a slim vertical strip */
-.columnCollapsed {
-  flex: 0 0 36px;
-  width: 36px;
-  background: var(--column-bg);
-  border-radius: 3px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  min-height: 0;
-  max-height: 100%;
-  opacity: 0.55;
-  overflow: hidden;
-  cursor: default;
-  transition: flex 0.2s ease, opacity 0.2s ease;
+/* Exception columns (NeedsRefinement, NeedsChanges) */
+.columnException {
+  background: #fff3cd;
+  border-color: #ffc107;
 }
 
-.columnCollapsed:hover {
-  opacity: 0.8;
+.columnException .columnHeader {
+  background: #ffeaa7;
+  border-bottom-color: #ffb700;
 }
 
-/* Collapsed column header — vertical layout */
-.columnCollapsedHeader {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 10px 0 8px;
-  gap: 6px;
-  width: 100%;
-}
-
-.columnCollapsedTitle {
-  writing-mode: vertical-rl;
-  text-orientation: mixed;
-  transform: rotate(180deg);
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-height: 120px;
-}
-
-.columnCollapsedCount {
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--text-muted);
+.exceptionIcon {
+  margin-right: 4px;
+  font-size: 14px;
 }
 
 .columnHeader {

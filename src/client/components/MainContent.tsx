@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useAppState } from '../state/AppState';
 import { APIClient } from '../api/client';
 import { FeatureAPI } from '../api/features.api';
@@ -10,6 +10,7 @@ import DetailPanel from './DetailPanel';
 import SettingsPage from './SettingsPage';
 import QueueAuditPanel from './QueueAuditPanel';
 import { useWebSocket } from '../hooks/useWebSocket';
+import { calculateProgress } from '../services/progressCalculator';
 import styles from './MainContent.module.css';
 
 const DEFAULT_DETAIL_PERCENT = 40;
@@ -102,6 +103,11 @@ const MainContent: React.FC = () => {
     }
   }, [currentFeatureSlug, currentRepo]);
 
+  // Calculate progress based on current tasks
+  const progressMetrics = useMemo(() => {
+    return calculateProgress(currentTasks);
+  }, [currentTasks]);
+
   // Called by TaskCard after a successful inline transition — refresh the board
   const handleTaskTransition = useCallback(() => {
     loadFeatureTasks();
@@ -164,7 +170,12 @@ const MainContent: React.FC = () => {
         {/* Board panel — takes remaining space */}
         <div className={styles.boardPanel}>
           <WhatNextBanner repoName={currentRepo} featureSlug={currentFeatureSlug} />
-          <Board tasks={currentTasks} onTaskTransition={handleTaskTransition} />
+          <Board
+            tasks={currentTasks}
+            onTaskTransition={handleTaskTransition}
+            featureName={featureTitle}
+            progressPercentage={progressMetrics.percentage}
+          />
         </div>
 
         {/* Resizer handle */}

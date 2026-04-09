@@ -48,16 +48,22 @@ export interface StakeholderReview {
 }
 
 export type TaskStatus =
+  // Refinement phase
+  | 'InRefinement'
+  | 'NeedsRefinement'
+  // Legacy refinement statuses (deprecated, kept for backward compatibility)
   | 'PendingProductDirector'
   | 'PendingArchitect'
   | 'PendingUiUxExpert'
   | 'PendingSecurityOfficer'
-  | 'NeedsRefinement'
+  // Development phase
   | 'ReadyForDevelopment'
+  | 'ToDo'
   | 'InProgress'
   | 'InReview'
   | 'InQA'
   | 'NeedsChanges'
+  // Completion
   | 'Done';
 
 export type StakeholderRole = 
