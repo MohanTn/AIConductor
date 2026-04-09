@@ -209,10 +209,20 @@ docker-compose down -v
 
 **Frontend React (SPA):**
 - **`client/App.tsx`** — Root component with layout
-- **`client/components/`** — Sidebar, MainContent, Board, DetailPanel, etc.
+- **`client/components/Board.tsx`** — Flat kanban board displaying all task statuses in workflow order
+  - Shows single row of columns: InRefinement → ReadyForDevelopment → ToDo → InProgress → InReview → InQA → NeedsChanges → Done
+  - NeedsRefinement and NeedsChanges columns highlighted with warning styling (orange background, ⚠️ icon)
+  - Displays feature name and progress percentage in board header
+  - Backward compatible with legacy PendingProductDirector/Architect/UxExpert/SecurityOfficer statuses
+- **`client/services/progressCalculator.ts`** — Milestone-based progress calculation
+  - Refinement phase (InRefinement, NeedsRefinement, legacy Pending*): 0-50% of progress
+  - Development phase (ReadyForDevelopment through InQA, NeedsChanges): 50-100% of progress
+  - Done: 100% complete
+  - Formula: (refinement_count / total) * 50% + (development_count / total) * 50% + (completed_count / total) * 100%
+- **`client/components/`** — Sidebar, MainContent, DetailPanel, etc.
 - **`client/api/`** — API client methods (repos.api.ts, features.api.ts, tasks.api.ts, export.api.ts)
 - **`client/state/AppState.tsx`** — Global state management (React Context)
-- **`client/types/index.ts`** — Frontend TypeScript interfaces
+- **`client/types/index.ts`** — Frontend TypeScript interfaces (updated to include InRefinement, ToDo statuses)
 
 ### Tests (`src/__tests__/`)
 - **`all-tools.test.ts`** — Tests all MCP tools
@@ -266,6 +276,28 @@ This metadata is stored in `previousRoleNotes` for downstream roles.
 - **Feature-level** — Acceptance criteria and test scenarios at feature scope
 - **Task-level** — Acceptance criteria and test scenarios scoped to individual tasks
 - Dashboard Detail view displays both (feature-level + aggregated task-level)
+
+### 6. Unified Kanban Dashboard
+**Workflow Visualization:**
+- Single flat kanban board shows all task statuses in exact workflow order
+- Columns flow left-to-right: InRefinement → ReadyForDevelopment → ToDo → InProgress → InReview → InQA → NeedsChanges → Done
+- No swim lanes or phase separators; all statuses visible in single view
+
+**Exception Handling:**
+- NeedsRefinement and NeedsChanges columns have distinct visual treatment (orange background, ⚠️ warning icon)
+- Helps team members quickly identify blockers that need rework
+
+**Progress Tracking:**
+- Milestone-based calculation (implemented in `progressCalculator.ts`)
+- ReadyForDevelopment = 50% complete (refinement milestone reached)
+- Done = 100% complete
+- Formula distributes progress evenly within refinement (0-50%) and development (50-100%) phases
+- Displayed in board header for real-time visibility
+
+**Backward Compatibility:**
+- Legacy Pending* statuses (PendingProductDirector, etc.) are visually grouped under InRefinement
+- Existing features with old statuses render correctly without migration
+- New features automatically use simplified InRefinement status
 
 ---
 

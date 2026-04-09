@@ -9,48 +9,35 @@ import styles from './Board.module.css';
 interface BoardProps {
   tasks: Task[];
   onTaskTransition?: (taskId: string, newStatus: TaskStatus) => void;
+  featureName?: string;
+  progressPercentage?: number;
 }
 
-interface SwimlaneConfig {
-  id: string;
+interface ColumnConfig {
+  status: TaskStatus;
   label: string;
-  statuses: { status: TaskStatus; label: string }[];
+  isException?: boolean; // true for NeedsRefinement and NeedsChanges
 }
 
-const SWIMLANE_CONFIG: SwimlaneConfig[] = [
-  {
-    id: 'refinement',
-    label: 'Refinement Phase',
-    statuses: [
-      { status: 'PendingProductDirector', label: 'Pending Product' },
-      { status: 'PendingArchitect', label: 'Pending Arch' },
-      { status: 'PendingUiUxExpert', label: 'Pending UX' },
-      { status: 'PendingSecurityOfficer', label: 'Pending Security' },
-      { status: 'NeedsRefinement', label: 'Needs Refinement' },
-    ],
-  },
-  {
-    id: 'development',
-    label: 'Development Phase',
-    statuses: [
-      { status: 'ReadyForDevelopment', label: 'Ready' },
-      { status: 'ToDo', label: 'To Do' },
-      { status: 'InProgress', label: 'In Progress' },
-      { status: 'InReview', label: 'In Review' },
-      { status: 'InQA', label: 'In QA' },
-      { status: 'NeedsChanges', label: 'Needs Changes' },
-    ],
-  },
-  {
-    id: 'completed',
-    label: 'Completed',
-    statuses: [
-      { status: 'Done', label: 'Done' },
-    ],
-  },
+// Flat kanban columns in exact workflow order
+const COLUMN_CONFIG: ColumnConfig[] = [
+  { status: 'InRefinement', label: 'In Refinement' },
+  // Legacy support for deprecated statuses (map to InRefinement visually)
+  { status: 'PendingProductDirector', label: 'In Refinement' },
+  { status: 'PendingArchitect', label: 'In Refinement' },
+  { status: 'PendingUiUxExpert', label: 'In Refinement' },
+  { status: 'PendingSecurityOfficer', label: 'In Refinement' },
+  { status: 'NeedsRefinement', label: 'Needs Refinement', isException: true },
+  { status: 'ReadyForDevelopment', label: 'Ready for Dev' },
+  { status: 'ToDo', label: 'To Do' },
+  { status: 'InProgress', label: 'In Progress' },
+  { status: 'InReview', label: 'In Review' },
+  { status: 'InQA', label: 'In QA' },
+  { status: 'NeedsChanges', label: 'Needs Changes', isException: true },
+  { status: 'Done', label: 'Done' },
 ];
 
-const Board: React.FC<BoardProps> = ({ tasks, onTaskTransition }) => {
+const Board: React.FC<BoardProps> = ({ tasks, onTaskTransition, featureName, progressPercentage }) => {
   const { currentRepo, currentFeatureSlug } = useAppState();
   const [modalTask, setModalTask] = useState<Task | null>(null);
   const [modalLoading, setModalLoading] = useState(false);
@@ -60,10 +47,14 @@ const Board: React.FC<BoardProps> = ({ tasks, onTaskTransition }) => {
   // Group tasks by status once; recompute only when tasks change
   const tasksByStatus = useMemo(() => {
     const grouped: Record<string, Task[]> = {};
-    SWIMLANE_CONFIG.forEach(swimlane =>
-      swimlane.statuses.forEach(col => { grouped[col.status] = []; })
-    );
+    COLUMN_CONFIG.forEach(col => { grouped[col.status] = []; });
+
     tasks.forEach(task => {
+      // Map deprecated statuses to InRefinement for grouping
+      const displayStatus = ['PendingProductDirector', 'PendingArchitect', 'PendingUiUxExpert', 'PendingSecurityOfficer'].includes(task.status)
+        ? 'InRefinement'
+        : task.status;
+
       if (grouped[task.status] !== undefined) {
         grouped[task.status].push(task);
       }
@@ -71,26 +62,18 @@ const Board: React.FC<BoardProps> = ({ tasks, onTaskTransition }) => {
     return grouped;
   }, [tasks]);
 
-  // Total task count per swimlane — drives auto-collapse logic
-  const swimlaneCounts = useMemo(() =>
-    SWIMLANE_CONFIG.reduce((acc, swimlane) => {
-      acc[swimlane.id] = swimlane.statuses.reduce(
-        (sum, col) => sum + (tasksByStatus[col.status]?.length ?? 0), 0
-      );
-      return acc;
-    }, {} as Record<string, number>),
-  [tasksByStatus]);
+  // Get unique active columns (columns with tasks or exception columns)
+  const activeColumns = useMemo(() => {
+    const uniqueStatuses = new Set<TaskStatus>();
+    tasks.forEach(task => uniqueStatuses.add(task.status));
 
-  // null = auto; true = forced collapsed; false = forced expanded
-  const [manualCollapse, setManualCollapse] = useState<Record<string, boolean | null>>({});
+    return COLUMN_CONFIG.filter(col =>
+      uniqueStatuses.has(col.status) || col.isException
+    );
+  }, [tasks]);
 
-  const isCollapsed = useCallback((id: string) =>
-    manualCollapse[id] != null ? manualCollapse[id]! : swimlaneCounts[id] === 0,
-  [manualCollapse, swimlaneCounts]);
-
-  const toggleSwimlane = useCallback((id: string) => {
-    setManualCollapse(prev => ({ ...prev, [id]: !isCollapsed(id) }));
-  }, [isCollapsed]);
+  // Total task count
+  const totalTasks = useMemo(() => tasks.length, [tasks]);
 
   const handleTaskClick = useCallback(async (taskId: string) => {
     setModalOpen(true);
@@ -115,84 +98,54 @@ const Board: React.FC<BoardProps> = ({ tasks, onTaskTransition }) => {
 
   return (
     <>
-      <div className={styles.boardContainer} role="region" aria-label="Task board">
-        {SWIMLANE_CONFIG.map(swimlane => {
-          const count = swimlaneCounts[swimlane.id];
-          const collapsed = isCollapsed(swimlane.id);
-          const bodyId = `swimlane-body-${swimlane.id}`;
+      <div className={styles.boardHeader}>
+        <div className={styles.boardTitle}>
+          {featureName && <h2>{featureName}</h2>}
+          <span className={styles.boardStats}>
+            {totalTasks} {totalTasks === 1 ? 'task' : 'tasks'}
+            {progressPercentage !== undefined && (
+              <span className={styles.progressInfo}>
+                {' • '}Progress: {progressPercentage}%
+              </span>
+            )}
+          </span>
+        </div>
+      </div>
 
-          return (
-            <div key={swimlane.id} className={styles.swimlane}>
-              <button
-                className={styles.swimlaneHeader}
-                onClick={() => toggleSwimlane(swimlane.id)}
-                aria-expanded={!collapsed}
-                aria-controls={bodyId}
-                type="button"
-              >
-                <span className={`${styles.swimlaneChevron} ${collapsed ? styles.swimlaneChevronCollapsed : ''}`}>
-                  ▾
-                </span>
-                <span className={styles.swimlaneLabel}>{swimlane.label}</span>
-                <span className={styles.swimlaneCount}>
-                  {count} {count === 1 ? 'task' : 'tasks'}
-                </span>
-              </button>
+      <div className={styles.boardContainer} role="region" aria-label="Task kanban board">
+        <div className={styles.board}>
+          {activeColumns.map(col => {
+            const columnTasks = tasksByStatus[col.status] ?? [];
+            const isException = col.isException ?? false;
 
+            return (
               <div
-                id={bodyId}
-                className={`${styles.swimlaneBody} ${collapsed ? styles.swimlaneBodyCollapsed : ''}`}
+                key={col.status}
+                className={`${styles.column} ${isException ? styles.columnException : ''}`}
+                role="list"
+                aria-label={col.label}
               >
-                <div className={styles.board}>
-                  {swimlane.statuses.map(col => {
-                    const columnTasks = tasksByStatus[col.status] ?? [];
-
-                    if (columnTasks.length === 0) {
-                      return (
-                        <div
-                          key={col.status}
-                          className={styles.columnCollapsed}
-                          title={col.label}
-                        >
-                          <div className={styles.columnCollapsedHeader}>
-                            <span className={styles.columnCollapsedCount}>0</span>
-                            <span className={styles.columnCollapsedTitle}>{col.label}</span>
-                          </div>
-                        </div>
-                      );
-                    }
-
-                    return (
-                      <div
-                        key={col.status}
-                        className={styles.column}
-                        role="list"
-                        aria-label={col.label}
-                      >
-                        <div className={styles.columnHeader}>
-                          <span className={styles.columnTitle}>{col.label}</span>
-                          <span className={styles.columnCount}>{columnTasks.length}</span>
-                        </div>
-                        <div className={styles.columnBody}>
-                          {columnTasks.map(task => (
-                            <TaskCard
-                              key={task.taskId}
-                              task={task}
-                              onTaskClick={handleTaskClick}
-                              onTransition={onTaskTransition}
-                              featureSlug={currentFeatureSlug}
-                              repoName={currentRepo}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })}
+                <div className={styles.columnHeader}>
+                  {isException && <span className={styles.exceptionIcon}>⚠️</span>}
+                  <span className={styles.columnTitle}>{col.label}</span>
+                  <span className={styles.columnCount}>{columnTasks.length}</span>
+                </div>
+                <div className={styles.columnBody}>
+                  {columnTasks.map(task => (
+                    <TaskCard
+                      key={task.taskId}
+                      task={task}
+                      onTaskClick={handleTaskClick}
+                      onTransition={onTaskTransition}
+                      featureSlug={currentFeatureSlug}
+                      repoName={currentRepo}
+                    />
+                  ))}
                 </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
 
       {modalOpen && (
