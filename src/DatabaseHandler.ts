@@ -1803,7 +1803,7 @@ echo "Starting dev workflow for {featureName}..."
       taskId,
       task.title || 'New Task',
       task.description || '',
-      task.status || 'PendingProductDirector',
+      task.status || 'InRefinement',
       task.assignedTo || null,
       task.estimatedHours || null,
       task.orderOfExecution || 0,

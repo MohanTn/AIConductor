@@ -317,14 +317,14 @@ export class ReviewService extends ServiceBase {
       const status = task.status;
 
       const roleMapping: Record<TaskStatus, PipelineRole | null> = {
-        InRefinement: null, // Single-stage refinement — no role
+        InRefinement: 'productDirector', // Single-stage refinement: Product Director reviews
         ReadyForDevelopment: 'developer',
         ToDo: 'developer',
         InProgress: 'developer',
         InReview: 'codeReviewer',
         InQA: 'qa',
         NeedsChanges: 'developer',
-        NeedsRefinement: 'developer', // Re-enter development on rejection
+        NeedsRefinement: 'productDirector', // Re-review after rejection
         Done: null,
         // Deprecated
         PendingProductDirector: 'productDirector',
@@ -527,9 +527,9 @@ export class ReviewService extends ServiceBase {
     allowedDecisions: string[];
   } {
     const map: Record<TaskStatus, { transitionOnSuccess: TaskStatus; transitionOnFailure: TaskStatus; allowedDecisions: string[] }> = {
-      InRefinement: { transitionOnSuccess: 'ReadyForDevelopment', transitionOnFailure: 'NeedsRefinement', allowedDecisions: ['submitResearch'] },
+      InRefinement: { transitionOnSuccess: 'ReadyForDevelopment', transitionOnFailure: 'NeedsRefinement', allowedDecisions: ['approve', 'reject'] },
       ReadyForDevelopment: { transitionOnSuccess: 'InProgress', transitionOnFailure: 'InProgress', allowedDecisions: ['start'] },
-      NeedsRefinement: { transitionOnSuccess: 'InRefinement', transitionOnFailure: 'InRefinement', allowedDecisions: ['restart'] },
+      NeedsRefinement: { transitionOnSuccess: 'ReadyForDevelopment', transitionOnFailure: 'NeedsRefinement', allowedDecisions: ['approve', 'reject'] },
       ToDo: { transitionOnSuccess: 'InProgress', transitionOnFailure: 'InProgress', allowedDecisions: ['start'] },
       InProgress: { transitionOnSuccess: 'InReview', transitionOnFailure: 'InProgress', allowedDecisions: ['submitForReview'] },
       InReview: { transitionOnSuccess: 'InQA', transitionOnFailure: 'NeedsChanges', allowedDecisions: ['approve', 'reject'] },

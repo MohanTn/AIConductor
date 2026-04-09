@@ -676,7 +676,7 @@ describe('All MCP Tools - Comprehensive Test Suite', () => {
 
       expect(result.success).toBe(true);
       expect(result.nextRole).toBe('productDirector');
-      expect(result.currentStatus).toBe('PendingProductDirector');
+      expect(result.currentStatus).toBe('InRefinement');
       expect(result.phase).toBe('review');
       expect(result.allowedDecisions).toContain('approve');
       expect(result.allowedDecisions).toContain('reject');
@@ -855,7 +855,7 @@ describe('All MCP Tools - Comprehensive Test Suite', () => {
       const result = await manager.getNextTask({
         repoName: REPO_NAME,
         featureSlug: FEATURE_SLUG,
-        statusFilter: ['PendingProductDirector'],
+        statusFilter: ['InRefinement'],
       });
 
       expect(result.success).toBe(true);
@@ -880,7 +880,7 @@ describe('All MCP Tools - Comprehensive Test Suite', () => {
       const result = await manager.getNextTask({
         repoName: REPO_NAME,
         featureSlug: FEATURE_SLUG,
-        statusFilter: ['ReadyForDevelopment', 'ToDo', 'PendingProductDirector'],
+        statusFilter: ['ReadyForDevelopment', 'ToDo', 'InRefinement'],
       });
 
       expect(result.success).toBe(true);
@@ -954,7 +954,7 @@ describe('All MCP Tools - Comprehensive Test Suite', () => {
       const result = await manager.getTasksByStatus({
         repoName: REPO_NAME,
         featureSlug: FEATURE_SLUG,
-        status: 'PendingProductDirector',
+        status: 'InRefinement',
       });
 
       expect(result.success).toBe(true);
@@ -981,15 +981,15 @@ describe('All MCP Tools - Comprehensive Test Suite', () => {
         additionalFields: { marketAnalysis: 'Market demand confirmed', competitorAnalysis: 'Competitor gap identified' },
       });
 
-      const pendingPD = await manager.getTasksByStatus({
-        repoName: REPO_NAME, featureSlug: FEATURE_SLUG, status: 'PendingProductDirector',
+      const inRefinement = await manager.getTasksByStatus({
+        repoName: REPO_NAME, featureSlug: FEATURE_SLUG, status: 'InRefinement',
       });
-      expect(pendingPD.count).toBe(0);
+      expect(inRefinement.count).toBe(0);
 
-      const pendingArch = await manager.getTasksByStatus({
-        repoName: REPO_NAME, featureSlug: FEATURE_SLUG, status: 'PendingArchitect',
+      const readyForDev = await manager.getTasksByStatus({
+        repoName: REPO_NAME, featureSlug: FEATURE_SLUG, status: 'ReadyForDevelopment',
       });
-      expect(pendingArch.count).toBe(1);
+      expect(readyForDev.count).toBe(1);
     });
   });
 

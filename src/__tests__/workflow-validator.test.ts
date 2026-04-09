@@ -143,8 +143,8 @@ describe('WorkflowValidator utility methods', () => {
       const task = makeTask({ status: 'InRefinement' });
       const progress = validator.getReviewProgress(task);
       expect(progress.completed).toHaveLength(0);
-      // InRefinement has placeholder productDirector role
-      expect(progress.currentStakeholder).toBe('productDirector');
+      // Single-stage refinement has no specific currentStakeholder
+      expect(progress.currentStakeholder).toBe(null);
     });
 
     test('task with productDirector approved shows it as completed', () => {
@@ -156,8 +156,8 @@ describe('WorkflowValidator utility methods', () => {
       });
       const progress = validator.getReviewProgress(task);
       expect(progress.completed).toContain('productDirector');
-      // Even when approved, currentStakeholder is still productDirector (placeholder for single-stage)
-      expect(progress.currentStakeholder).toBe('productDirector');
+      // Single-stage refinement has no currentStakeholder
+      expect(progress.currentStakeholder).toBe(null);
     });
   });
 

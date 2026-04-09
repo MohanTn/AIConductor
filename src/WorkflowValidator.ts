@@ -66,10 +66,12 @@ export class WorkflowValidator {
     }
 
     // Validate correct stakeholder
-    if (rule.expectedStakeholder !== stakeholder) {
+    // For InRefinement (single-stage), only productDirector can review
+    const expectedForStatus = currentStatus === 'InRefinement' ? 'productDirector' : rule.expectedStakeholder;
+    if (expectedForStatus !== stakeholder) {
       errors.push(
-        `Wrong stakeholder. Expected ${rule.expectedStakeholder}, got ${stakeholder}. ` +
-          `Task at status ${currentStatus} requires review from ${rule.expectedStakeholder}.`
+        `Wrong stakeholder. Expected ${expectedForStatus}, got ${stakeholder}. ` +
+          `Task at status ${currentStatus} requires review from ${expectedForStatus}.`
       );
     }
 
@@ -86,7 +88,7 @@ export class WorkflowValidator {
       errors,
       warnings,
       currentStatus,
-      expectedStakeholder: rule.expectedStakeholder,
+      expectedStakeholder: expectedForStatus,
       allowedTransitions: [rule.onApprove, rule.onReject],
     };
   }
@@ -95,6 +97,10 @@ export class WorkflowValidator {
    * Get current expected stakeholder for a task
    */
   getExpectedStakeholder(status: TaskStatus): StakeholderRole | null {
+    // For InRefinement (single-stage), the expected stakeholder is productDirector
+    if (status === 'InRefinement') {
+      return 'productDirector';
+    }
     const rule = WORKFLOW_RULES[status];
     return rule ? rule.expectedStakeholder : null;
   }
@@ -158,7 +164,9 @@ export class WorkflowValidator {
       }
     }
 
-    const currentStakeholder = this.getExpectedStakeholder(task.status);
+    // For single-stage refinement (InRefinement), currentStakeholder is null
+    // because there's no specific "current" stakeholder in the single-stage model
+    const currentStakeholder = task.status === 'InRefinement' ? null : this.getExpectedStakeholder(task.status);
 
     return { completed, pending, currentStakeholder };
   }

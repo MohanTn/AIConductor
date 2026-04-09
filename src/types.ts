@@ -249,7 +249,7 @@ export interface ValidationResult {
 }
 
 export interface WorkflowRule {
-  expectedStakeholder: StakeholderRole;
+  expectedStakeholder: StakeholderRole | null;
   onApprove: TaskStatus;
   onReject: TaskStatus;
   allowedPreviousStatuses: TaskStatus[];
@@ -257,7 +257,7 @@ export interface WorkflowRule {
 
 export const WORKFLOW_RULES: Record<TaskStatus, WorkflowRule | null> = {
   InRefinement: {
-    expectedStakeholder: 'productDirector', // Placeholder; single-stage doesn't use stakeholders
+    expectedStakeholder: null, // Single-stage refinement has no specific stakeholder expectation
     onApprove: 'ReadyForDevelopment',
     onReject: 'NeedsRefinement',
     allowedPreviousStatuses: ['InRefinement', 'NeedsRefinement'],
