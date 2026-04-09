@@ -23,7 +23,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     taskId: 'T01',
     title: 'Test task',
     description: 'A test task',
-    status: 'PendingProductDirector',
+    status: 'InRefinement',
     acceptanceCriteria: [],
     testScenarios: [],
     outOfScope: [],
@@ -47,35 +47,26 @@ describe('WorkflowValidator.validate()', () => {
     validator = new WorkflowValidator();
   });
 
-  // Happy-path: each role approves
-  test.each<[TaskStatus, StakeholderRole, TaskStatus]>([
-    ['PendingProductDirector', 'productDirector', 'PendingArchitect'],
-    ['PendingArchitect',        'architect',       'PendingUiUxExpert'],
-    ['PendingUiUxExpert',       'uiUxExpert',      'PendingSecurityOfficer'],
-    ['PendingSecurityOfficer',  'securityOfficer', 'ReadyForDevelopment'],
-  ])('%s + %s approve → %s', (status, stakeholder, expectedNext) => {
-    const result = validator.validate(status, stakeholder, 'approve');
+  // Happy-path: single-stage refinement (InRefinement → ReadyForDevelopment)
+  // Note: Placeholder stakeholder 'productDirector' used since single-stage doesn't require role verification
+  test('InRefinement + productDirector approve → ReadyForDevelopment', () => {
+    const result = validator.validate('InRefinement', 'productDirector', 'approve');
     expect(result.valid).toBe(true);
     expect(result.errors).toHaveLength(0);
-    expect(result.allowedTransitions).toContain(expectedNext);
+    expect(result.allowedTransitions).toContain('ReadyForDevelopment');
   });
 
-  // Happy-path: each role rejects
-  test.each<[TaskStatus, StakeholderRole]>([
-    ['PendingProductDirector', 'productDirector'],
-    ['PendingArchitect',        'architect'],
-    ['PendingUiUxExpert',       'uiUxExpert'],
-    ['PendingSecurityOfficer',  'securityOfficer'],
-  ])('%s + %s reject → NeedsRefinement (warning emitted)', (status, stakeholder) => {
-    const result = validator.validate(status, stakeholder, 'reject');
+  // Happy-path: single-stage refinement rejection
+  test('InRefinement + productDirector reject → NeedsRefinement', () => {
+    const result = validator.validate('InRefinement', 'productDirector', 'reject');
     expect(result.valid).toBe(true);
     expect(result.warnings.length).toBeGreaterThan(0);
     expect(result.warnings[0]).toMatch(/NeedsRefinement/);
   });
 
-  // Wrong stakeholder
+  // Wrong stakeholder (InRefinement has placeholder productDirector)
   test('wrong stakeholder returns invalid result with error', () => {
-    const result = validator.validate('PendingProductDirector', 'architect', 'approve');
+    const result = validator.validate('InRefinement', 'architect', 'approve');
     expect(result.valid).toBe(false);
     expect(result.errors[0]).toMatch(/Wrong stakeholder/);
     expect(result.errors[0]).toMatch(/productDirector/);
@@ -112,25 +103,21 @@ describe('WorkflowValidator utility methods', () => {
   });
 
   describe('getExpectedStakeholder()', () => {
-    test.each<[TaskStatus, StakeholderRole]>([
-      ['PendingProductDirector', 'productDirector'],
-      ['PendingArchitect',        'architect'],
-      ['PendingUiUxExpert',       'uiUxExpert'],
-      ['PendingSecurityOfficer',  'securityOfficer'],
-    ])('%s → %s', (status, expected) => {
-      expect(validator.getExpectedStakeholder(status)).toBe(expected);
+    test('InRefinement → productDirector (placeholder for single-stage)', () => {
+      expect(validator.getExpectedStakeholder('InRefinement')).toBe('productDirector');
     });
 
     test('non-refinement status → null', () => {
       expect(validator.getExpectedStakeholder('Done')).toBeNull();
       expect(validator.getExpectedStakeholder('InProgress')).toBeNull();
+      expect(validator.getExpectedStakeholder('ReadyForDevelopment')).toBeNull();
     });
   });
 
   describe('getAllowedTransitions()', () => {
-    test('PendingProductDirector has two transitions', () => {
-      const transitions = validator.getAllowedTransitions('PendingProductDirector');
-      expect(transitions).toContain('PendingArchitect');
+    test('InRefinement has two transitions', () => {
+      const transitions = validator.getAllowedTransitions('InRefinement');
+      expect(transitions).toContain('ReadyForDevelopment');
       expect(transitions).toContain('NeedsRefinement');
     });
 
@@ -140,35 +127,37 @@ describe('WorkflowValidator utility methods', () => {
   });
 
   describe('isTerminalState()', () => {
-    test.each<TaskStatus>(['ReadyForDevelopment', 'NeedsRefinement', 'Done'])(
+    test.each<TaskStatus>(['ReadyForDevelopment', 'Done'])(
       '%s is terminal',
       (status) => expect(validator.isTerminalState(status)).toBe(true)
     );
 
-    test.each<TaskStatus>(['PendingProductDirector', 'InProgress', 'InReview'])(
+    test.each<TaskStatus>(['InRefinement', 'InProgress', 'InReview'])(
       '%s is NOT terminal',
       (status) => expect(validator.isTerminalState(status)).toBe(false)
     );
   });
 
   describe('getReviewProgress()', () => {
-    test('fresh task has all pending', () => {
-      const task = makeTask({ status: 'PendingProductDirector' });
+    test('fresh InRefinement task has no completed stakeholders', () => {
+      const task = makeTask({ status: 'InRefinement' });
       const progress = validator.getReviewProgress(task);
       expect(progress.completed).toHaveLength(0);
-      expect(progress.currentStakeholder).toBe('productDirector');
+      // Single-stage refinement has no specific currentStakeholder
+      expect(progress.currentStakeholder).toBe(null);
     });
 
     test('task with productDirector approved shows it as completed', () => {
       const task = makeTask({
-        status: 'PendingArchitect',
+        status: 'InRefinement',
         stakeholderReview: {
           productDirector: { approved: true, notes: 'LGTM' },
         },
       });
       const progress = validator.getReviewProgress(task);
       expect(progress.completed).toContain('productDirector');
-      expect(progress.currentStakeholder).toBe('architect');
+      // Single-stage refinement has no currentStakeholder
+      expect(progress.currentStakeholder).toBe(null);
     });
   });
 

@@ -1104,6 +1104,46 @@ echo "Starting dev workflow for {featureName}..."
         INSERT OR IGNORE INTO _migrations (name, applied_at) VALUES (?, ?)
       `).run('007_add_feature_intention', new Date().toISOString());
     }
+
+    // Migration 008: Collapse 4-stage refinement to single InRefinement stage
+    const refinementCollapseMigration = this.db.prepare(`
+      SELECT * FROM _migrations WHERE name = '008_collapse_refinement_stages'
+    `).get();
+
+    if (!refinementCollapseMigration) {
+      try {
+        // Migrate all Pending* states to InRefinement in tasks table
+        const updateResult = this.db.prepare(`
+          UPDATE tasks
+          SET status = 'InRefinement'
+          WHERE status IN ('PendingProductDirector', 'PendingArchitect', 'PendingUiUxExpert', 'PendingSecurityOfficer')
+        `).run();
+
+        // Migrate transitions from_status
+        this.db.prepare(`
+          UPDATE transitions
+          SET from_status = 'InRefinement'
+          WHERE from_status IN ('PendingProductDirector', 'PendingArchitect', 'PendingUiUxExpert', 'PendingSecurityOfficer')
+        `).run();
+
+        // Migrate transitions to_status
+        this.db.prepare(`
+          UPDATE transitions
+          SET to_status = 'InRefinement'
+          WHERE to_status IN ('PendingProductDirector', 'PendingArchitect', 'PendingUiUxExpert', 'PendingSecurityOfficer')
+        `).run();
+
+        // Log the migration
+        console.log(`[migration] Migrated ${(updateResult as any).changes} tasks from legacy stakeholder states to InRefinement`);
+      } catch (e) {
+        throw new Error(
+          `Fatal: Migration 008 (collapse_refinement_stages) failed: ${e instanceof Error ? e.message : String(e)}`
+        );
+      }
+      this.db.prepare(`
+        INSERT OR IGNORE INTO _migrations (name, applied_at) VALUES (?, ?)
+      `).run('008_collapse_refinement_stages', new Date().toISOString());
+    }
   }
 
   /**
@@ -1763,7 +1803,7 @@ echo "Starting dev workflow for {featureName}..."
       taskId,
       task.title || 'New Task',
       task.description || '',
-      task.status || 'PendingProductDirector',
+      task.status || 'InRefinement',
       task.assignedTo || null,
       task.estimatedHours || null,
       task.orderOfExecution || 0,

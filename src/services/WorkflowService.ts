@@ -39,19 +39,21 @@ export class WorkflowService extends ServiceBase {
       const taskFile = await this.db.loadByFeatureSlug(featureSlug, repoName);
 
       const statusCounts: Record<TaskStatus, number> = {
-        PendingProductDirector: 0, PendingArchitect: 0, PendingUiUxExpert: 0,
-        PendingSecurityOfficer: 0, ReadyForDevelopment: 0, NeedsRefinement: 0,
+        InRefinement: 0, ReadyForDevelopment: 0, NeedsRefinement: 0,
         ToDo: 0, InProgress: 0, InReview: 0, InQA: 0, NeedsChanges: 0, Done: 0,
+        PendingProductDirector: 0, PendingArchitect: 0, PendingUiUxExpert: 0,
+        PendingSecurityOfficer: 0,
       };
 
       const roleMapping: Record<TaskStatus, string | null> = {
+        InRefinement: 'Refinement',
+        ReadyForDevelopment: null, NeedsRefinement: null, ToDo: null,
+        InProgress: 'Developer', InReview: 'Code Reviewer', InQA: 'QA',
+        NeedsChanges: 'Developer', Done: null,
         PendingProductDirector: 'Product Director',
         PendingArchitect: 'Architect',
         PendingUiUxExpert: 'UI/UX Expert',
         PendingSecurityOfficer: 'Security Officer',
-        ReadyForDevelopment: null, NeedsRefinement: null, ToDo: null,
-        InProgress: 'Developer', InReview: 'Code Reviewer', InQA: 'QA',
-        NeedsChanges: 'Developer', Done: null,
       };
 
       const taskSnapshot = taskFile.tasks.map((task) => {
@@ -76,8 +78,9 @@ export class WorkflowService extends ServiceBase {
       });
 
       const blockages = taskSnapshot
-        .filter((t) => ['PendingProductDirector', 'PendingArchitect', 'PendingUiUxExpert',
-          'PendingSecurityOfficer', 'NeedsRefinement', 'NeedsChanges'].includes(t.status))
+        .filter((t) => ['InRefinement', 'NeedsRefinement', 'NeedsChanges',
+          'PendingProductDirector', 'PendingArchitect', 'PendingUiUxExpert',
+          'PendingSecurityOfficer'].includes(t.status))
         .map((t) => {
           const task = taskFile.tasks.find((task) => task.taskId === t.taskId)!;
           const lastTransition = task.transitions[task.transitions.length - 1];

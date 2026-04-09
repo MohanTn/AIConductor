@@ -21,6 +21,8 @@ import {
   ValidateReviewCompletenessResult,
   SubmitRoleBatchReviewInput,
   SubmitRoleBatchReviewResult,
+  SubmitRefinementResearchInput,
+  SubmitRefinementResearchResult,
 } from '../types.js';
 import { ServiceBase } from './ServiceBase.js';
 
@@ -213,10 +215,7 @@ export class ReviewService extends ServiceBase {
       const taskFile = await this.db.loadByFeatureSlug(featureSlug, repoName);
 
       const tasksByStatus: Record<TaskStatus, number> = {
-        PendingProductDirector: 0,
-        PendingArchitect: 0,
-        PendingUiUxExpert: 0,
-        PendingSecurityOfficer: 0,
+        InRefinement: 0,
         ReadyForDevelopment: 0,
         NeedsRefinement: 0,
         ToDo: 0,
@@ -225,6 +224,11 @@ export class ReviewService extends ServiceBase {
         InQA: 0,
         NeedsChanges: 0,
         Done: 0,
+        // Deprecated
+        PendingProductDirector: 0,
+        PendingArchitect: 0,
+        PendingUiUxExpert: 0,
+        PendingSecurityOfficer: 0,
       };
 
       const stakeholderProgress = {
@@ -313,18 +317,20 @@ export class ReviewService extends ServiceBase {
       const status = task.status;
 
       const roleMapping: Record<TaskStatus, PipelineRole | null> = {
-        PendingProductDirector: 'productDirector',
-        PendingArchitect: 'architect',
-        PendingUiUxExpert: 'uiUxExpert',
-        PendingSecurityOfficer: 'securityOfficer',
+        InRefinement: 'productDirector', // Single-stage refinement: Product Director reviews
         ReadyForDevelopment: 'developer',
         ToDo: 'developer',
         InProgress: 'developer',
         InReview: 'codeReviewer',
         InQA: 'qa',
         NeedsChanges: 'developer',
-        NeedsRefinement: 'productDirector',
+        NeedsRefinement: 'productDirector', // Re-review after rejection
         Done: null,
+        // Deprecated
+        PendingProductDirector: 'productDirector',
+        PendingArchitect: 'architect',
+        PendingUiUxExpert: 'uiUxExpert',
+        PendingSecurityOfficer: 'securityOfficer',
       };
 
       const nextRole = roleMapping[status];
@@ -497,18 +503,20 @@ export class ReviewService extends ServiceBase {
 
   private getApprovalStatus(currentStatus: TaskStatus): TaskStatus {
     const statusMap: Record<TaskStatus, TaskStatus> = {
-      PendingProductDirector: 'PendingArchitect',
-      PendingArchitect: 'PendingUiUxExpert',
-      PendingUiUxExpert: 'PendingSecurityOfficer',
-      PendingSecurityOfficer: 'ReadyForDevelopment',
+      InRefinement: 'ReadyForDevelopment',
       ReadyForDevelopment: 'ReadyForDevelopment',
-      NeedsRefinement: 'NeedsRefinement',
+      NeedsRefinement: 'InRefinement',
       ToDo: 'ToDo',
       InProgress: 'InProgress',
       InReview: 'InReview',
       InQA: 'InQA',
       NeedsChanges: 'NeedsChanges',
       Done: 'Done',
+      // Deprecated
+      PendingProductDirector: 'PendingArchitect',
+      PendingArchitect: 'PendingUiUxExpert',
+      PendingUiUxExpert: 'PendingSecurityOfficer',
+      PendingSecurityOfficer: 'ReadyForDevelopment',
     };
     return statusMap[currentStatus];
   }
@@ -519,18 +527,20 @@ export class ReviewService extends ServiceBase {
     allowedDecisions: string[];
   } {
     const map: Record<TaskStatus, { transitionOnSuccess: TaskStatus; transitionOnFailure: TaskStatus; allowedDecisions: string[] }> = {
-      PendingProductDirector: { transitionOnSuccess: 'PendingArchitect', transitionOnFailure: 'NeedsRefinement', allowedDecisions: ['approve', 'reject'] },
-      PendingArchitect: { transitionOnSuccess: 'PendingUiUxExpert', transitionOnFailure: 'NeedsRefinement', allowedDecisions: ['approve', 'reject'] },
-      PendingUiUxExpert: { transitionOnSuccess: 'PendingSecurityOfficer', transitionOnFailure: 'NeedsRefinement', allowedDecisions: ['approve', 'reject'] },
-      PendingSecurityOfficer: { transitionOnSuccess: 'ReadyForDevelopment', transitionOnFailure: 'NeedsRefinement', allowedDecisions: ['approve', 'reject'] },
-      NeedsRefinement: { transitionOnSuccess: 'PendingProductDirector', transitionOnFailure: 'PendingProductDirector', allowedDecisions: ['restart'] },
-      ReadyForDevelopment: { transitionOnSuccess: 'ToDo', transitionOnFailure: 'ToDo', allowedDecisions: ['start'] },
+      InRefinement: { transitionOnSuccess: 'ReadyForDevelopment', transitionOnFailure: 'NeedsRefinement', allowedDecisions: ['approve', 'reject'] },
+      ReadyForDevelopment: { transitionOnSuccess: 'InProgress', transitionOnFailure: 'InProgress', allowedDecisions: ['start'] },
+      NeedsRefinement: { transitionOnSuccess: 'ReadyForDevelopment', transitionOnFailure: 'NeedsRefinement', allowedDecisions: ['approve', 'reject'] },
       ToDo: { transitionOnSuccess: 'InProgress', transitionOnFailure: 'InProgress', allowedDecisions: ['start'] },
       InProgress: { transitionOnSuccess: 'InReview', transitionOnFailure: 'InProgress', allowedDecisions: ['submitForReview'] },
       InReview: { transitionOnSuccess: 'InQA', transitionOnFailure: 'NeedsChanges', allowedDecisions: ['approve', 'reject'] },
       InQA: { transitionOnSuccess: 'Done', transitionOnFailure: 'NeedsChanges', allowedDecisions: ['approve', 'reject'] },
       NeedsChanges: { transitionOnSuccess: 'InProgress', transitionOnFailure: 'InProgress', allowedDecisions: ['startFix'] },
       Done: { transitionOnSuccess: 'Done', transitionOnFailure: 'Done', allowedDecisions: [] },
+      // Deprecated
+      PendingProductDirector: { transitionOnSuccess: 'PendingArchitect', transitionOnFailure: 'NeedsRefinement', allowedDecisions: ['approve', 'reject'] },
+      PendingArchitect: { transitionOnSuccess: 'PendingUiUxExpert', transitionOnFailure: 'NeedsRefinement', allowedDecisions: ['approve', 'reject'] },
+      PendingUiUxExpert: { transitionOnSuccess: 'PendingSecurityOfficer', transitionOnFailure: 'NeedsRefinement', allowedDecisions: ['approve', 'reject'] },
+      PendingSecurityOfficer: { transitionOnSuccess: 'ReadyForDevelopment', transitionOnFailure: 'NeedsRefinement', allowedDecisions: ['approve', 'reject'] },
     };
     return map[status];
   }
@@ -662,5 +672,29 @@ export class ReviewService extends ServiceBase {
       totalSucceeded,
       message: `Batch review complete: ${totalSucceeded}/${input.reviews.length} succeeded for ${input.stakeholder}`,
     };
+  }
+
+  // Single-stage refinement: submit research and transition all InRefinement tasks to ReadyForDevelopment (T04)
+  // Stub: full implementation to follow in T04 implementation phase
+  async submitRefinementResearch(input: SubmitRefinementResearchInput): Promise<SubmitRefinementResearchResult> {
+    try {
+      // TODO: T04 implementation
+      // 1. Validate quality gates (clarifications, AC, test scenarios)
+      // 2. Transition all InRefinement tasks to ReadyForDevelopment
+      // 3. Return success
+      return {
+        success: true,
+        featureSlug: input.featureSlug,
+        tasksTransitioned: 0,
+        message: 'T04 implementation pending - stub returns success',
+      };
+    } catch (error) {
+      return {
+        success: false,
+        featureSlug: input.featureSlug,
+        tasksTransitioned: 0,
+        error: `Failed to submit refinement research: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
   }
 }
