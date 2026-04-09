@@ -27,29 +27,6 @@ export const TOOLS = [
     },
   },
   {
-    name: 'get_task_status',
-    description:
-      '[DEBUG TOOL] Get the current status of a specific task including which stakeholders have reviewed it and what transitions are allowed. Use get_workflow_context instead for programmatic workflow queries.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        repoName: {
-          type: 'string',
-          description: 'Repository name',
-        },
-        featureSlug: {
-          type: 'string',
-          description: 'Feature slug name',
-        },
-        taskId: {
-          type: 'string',
-          description: 'Unique task identifier (e.g., T01, T02)',
-        },
-      },
-      required: ['repoName', 'featureSlug', 'taskId'],
-    },
-  },
-  {
     name: 'get_review_summary',
     description:
       'Generate a comprehensive summary of all tasks showing progress by status and stakeholder.',
@@ -153,61 +130,6 @@ export const TOOLS = [
         },
       },
       required: ['repoName', 'featureSlug', 'taskId', 'fromStatus', 'toStatus', 'actor'],
-    },
-  },
-  {
-    name: 'get_next_task',
-    description:
-      'Get the next task to work on based on status filter and orderOfExecution. Returns the task with the lowest orderOfExecution value.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        repoName: {
-          type: 'string',
-          description: 'Repository name',
-        },
-        featureSlug: {
-          type: 'string',
-          description: 'Feature slug name',
-        },
-        statusFilter: {
-          type: 'array',
-          items: { type: 'string' },
-          description: 'Array of task statuses to filter by (e.g., ["ReadyForDevelopment", "ToDo", "NeedsChanges"])',
-        },
-      },
-      required: ['repoName', 'featureSlug', 'statusFilter'],
-    },
-  },
-  {
-    name: 'update_acceptance_criteria',
-    description:
-      'Mark an acceptance criterion as verified or unverified for a specific task.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        repoName: {
-          type: 'string',
-          description: 'Repository name',
-        },
-        featureSlug: {
-          type: 'string',
-          description: 'Feature slug name',
-        },
-        taskId: {
-          type: 'string',
-          description: 'Unique task identifier (e.g., T01, T02)',
-        },
-        criterionId: {
-          type: 'string',
-          description: 'Acceptance criterion ID (e.g., AC-1)',
-        },
-        verified: {
-          type: 'boolean',
-          description: 'Whether the criterion is verified (true) or not (false)',
-        },
-      },
-      required: ['repoName', 'featureSlug', 'taskId', 'criterionId', 'verified'],
     },
   },
   {

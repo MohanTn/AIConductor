@@ -1,7 +1,7 @@
 /**
  * Comprehensive MCP Tool Test Suite
  *
- * Tests ALL 27 MCP tools exposed by the aiconductor server.
+ * Tests ALL 34 MCP tools exposed by the aiconductor server.
  * Ensures every tool works correctly end-to-end through AIConductor.
  *
  * Tools tested:
@@ -15,23 +15,21 @@
  *  8. delete_feature
  *  9. update_task
  * 10. delete_task
- * 11. get_task_status
- * 12. get_review_summary
- * 13. validate_workflow
- * 14. add_stakeholder_review
- * 15. get_next_step
- * 16. transition_task_status
- * 17. get_next_task
- * 18. update_acceptance_criteria
- * 19. get_tasks_by_status
- * 20. verify_all_tasks_complete
- * 21. update_refinement_step
- * 22. add_feature_acceptance_criteria
- * 23. add_feature_test_scenarios
- * 24. add_clarification
- * 25. add_attachment_analysis
- * 26. get_refinement_status
- * 27. generate_refinement_report
+ * 11. get_review_summary
+ * 12. validate_workflow
+ * 13. add_stakeholder_review
+ * 14. get_next_step
+ * 15. transition_task_status
+ * 16. get_tasks_by_status
+ * 17. verify_all_tasks_complete
+ * 18. update_refinement_step
+ * 19. add_feature_acceptance_criteria
+ * 20. add_feature_test_scenarios
+ * 21. add_clarification
+ * 22. add_attachment_analysis
+ * 23. get_refinement_status
+ * 24. generate_refinement_report
+ * (and 10 additional tools: batch_transition_tasks, batch_update_acceptance_criteria, etc.)
  */
 
 import { AIConductor } from '../AIConductor.js';
@@ -494,33 +492,7 @@ describe('All MCP Tools - Comprehensive Test Suite', () => {
   });
 
   // ======================================================================
-  // 11. get_task_status
-  // ======================================================================
-  describe('Tool: get_task_status', () => {
-    test('should return task status with review progress', async () => {
-      await setupFullEnvironment(manager, dbHandler);
-
-      const result = await manager.getTaskStatus(REPO_NAME, FEATURE_SLUG, 'T01');
-
-      expect(result.taskId).toBe('T01');
-      expect(result.status).toBe('InRefinement');
-      expect(result.currentStakeholder).toBe(null);  // Single-stage refinement has no role
-      expect(result.canTransitionTo).toContain('ReadyForDevelopment');
-      expect(result.canTransitionTo).toContain('NeedsRefinement');
-      expect(result.orderOfExecution).toBe(1);
-    });
-
-    test('should throw for non-existent task', async () => {
-      await setupFullEnvironment(manager, dbHandler);
-
-      await expect(
-        manager.getTaskStatus(REPO_NAME, FEATURE_SLUG, 'T99')
-      ).rejects.toThrow('not found');
-    });
-  });
-
-  // ======================================================================
-  // 12. get_review_summary
+  // 11. get_review_summary
   // ======================================================================
   describe('Tool: get_review_summary', () => {
     test('should generate summary with task counts', async () => {
@@ -838,112 +810,7 @@ describe('All MCP Tools - Comprehensive Test Suite', () => {
   });
 
   // ======================================================================
-  // 17. get_next_task
-  // ======================================================================
-  describe('Tool: get_next_task', () => {
-    beforeEach(async () => {
-      await setupFullEnvironment(manager, dbHandler);
-    });
-
-    test('should return task with lowest orderOfExecution', async () => {
-      await manager.addTask({
-        repoName: REPO_NAME, featureSlug: FEATURE_SLUG,
-        taskId: 'T02', title: 'Second task', description: 'Desc',
-        orderOfExecution: 2,
-      });
-
-      const result = await manager.getNextTask({
-        repoName: REPO_NAME,
-        featureSlug: FEATURE_SLUG,
-        statusFilter: ['InRefinement'],
-      });
-
-      expect(result.success).toBe(true);
-      expect(result.task).toBeDefined();
-      expect(result.task!.taskId).toBe('T01');
-      expect(result.task!.orderOfExecution).toBe(1);
-    });
-
-    test('should return no task when no status matches', async () => {
-      const result = await manager.getNextTask({
-        repoName: REPO_NAME,
-        featureSlug: FEATURE_SLUG,
-        statusFilter: ['Done'],
-      });
-
-      expect(result.success).toBe(true);
-      expect(result.task).toBeUndefined();
-      expect(result.message).toContain('No tasks found');
-    });
-
-    test('should filter by multiple statuses', async () => {
-      const result = await manager.getNextTask({
-        repoName: REPO_NAME,
-        featureSlug: FEATURE_SLUG,
-        statusFilter: ['ReadyForDevelopment', 'ToDo', 'InRefinement'],
-      });
-
-      expect(result.success).toBe(true);
-      expect(result.task).toBeDefined();
-    });
-  });
-
-  // ======================================================================
-  // 18. update_acceptance_criteria
-  // ======================================================================
-  describe('Tool: update_acceptance_criteria', () => {
-    beforeEach(async () => {
-      await setupFullEnvironment(manager, dbHandler);
-    });
-
-    test('should mark criterion as verified', async () => {
-      const result = await manager.updateAcceptanceCriteria({
-        repoName: REPO_NAME,
-        featureSlug: FEATURE_SLUG,
-        taskId: 'T01',
-        criterionId: 'AC-1',
-        verified: true,
-      });
-
-      expect(result.success).toBe(true);
-      expect(result.verified).toBe(true);
-      expect(result.message).toContain('verified');
-
-      // Verify persistence
-      const feature = await manager.getFeature(REPO_NAME, FEATURE_SLUG);
-      const ac = feature.feature!.tasks[0].acceptanceCriteria.find(c => c.id === 'AC-1');
-      expect(ac!.verified).toBe(true);
-    });
-
-    test('should mark criterion as unverified', async () => {
-      // First verify, then unverify
-      await manager.updateAcceptanceCriteria({
-        repoName: REPO_NAME, featureSlug: FEATURE_SLUG, taskId: 'T01',
-        criterionId: 'AC-1', verified: true,
-      });
-
-      const result = await manager.updateAcceptanceCriteria({
-        repoName: REPO_NAME, featureSlug: FEATURE_SLUG, taskId: 'T01',
-        criterionId: 'AC-1', verified: false,
-      });
-
-      expect(result.success).toBe(true);
-      expect(result.verified).toBe(false);
-    });
-
-    test('should fail for non-existent criterion', async () => {
-      const result = await manager.updateAcceptanceCriteria({
-        repoName: REPO_NAME, featureSlug: FEATURE_SLUG, taskId: 'T01',
-        criterionId: 'AC-99', verified: true,
-      });
-
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('not found');
-    });
-  });
-
-  // ======================================================================
-  // 19. get_tasks_by_status
+  // 18. get_tasks_by_status
   // ======================================================================
   describe('Tool: get_tasks_by_status', () => {
     beforeEach(async () => {

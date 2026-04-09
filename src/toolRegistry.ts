@@ -57,15 +57,6 @@ export function createToolHandlers(
       return wrapResult(result);
     }],
 
-    ['get_task_status', async (args) => {
-      const result = await reviewManager.getTaskStatus(
-        requireString(args, 'repoName'),
-        requireString(args, 'featureSlug'),
-        requireString(args, 'taskId')
-      );
-      return wrapResult(result);
-    }],
-
     ['get_review_summary', async (args) => {
       const result = await reviewManager.getReviewSummary(
         requireString(args, 'repoName'),
@@ -140,15 +131,6 @@ export function createToolHandlers(
       return wrapResult(result);
     }],
 
-    ['get_next_task', async (args) => {
-      const result = await reviewManager.getNextTask({
-        repoName: requireString(args, 'repoName'),
-        featureSlug: requireString(args, 'featureSlug'),
-        statusFilter: args.statusFilter as any[],
-      });
-      return wrapResult(result);
-    }],
-
     ['get_tasks_by_status', async (args) => {
       const result = await reviewManager.getTasksByStatus({
         repoName: requireString(args, 'repoName'),
@@ -191,17 +173,6 @@ export function createToolHandlers(
     }],
 
     // ── Acceptance criteria & test scenarios ──────────────────────────────
-
-    ['update_acceptance_criteria', async (args) => {
-      const result = await reviewManager.updateAcceptanceCriteria({
-        repoName: requireString(args, 'repoName'),
-        featureSlug: requireString(args, 'featureSlug'),
-        taskId: requireString(args, 'taskId'),
-        criterionId: requireString(args, 'criterionId'),
-        verified: args.verified as boolean,
-      });
-      return wrapResult(result);
-    }],
 
     ['batch_update_acceptance_criteria', async (args) => {
       const result = await reviewManager.batchUpdateAcceptanceCriteria({
