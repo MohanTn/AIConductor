@@ -23,6 +23,10 @@ Store each: `add_clarification(question, userAnswer, askedBy: "llm")`.
 
 **Why batch upfront?** Sequential batching (ask 2-3, wait → ask 2-3 more, wait) creates 2-3 blocking cycles = 30-45 min wasted. Batching upfront lets users answer in parallel = faster time-to-clarity.
 
+## HARD CONSTRAINTS
+## Step 2.5 - extensive market research (Optimization 1.5)
+Before defining acceptance criteria, conduct comprehensive market research to inform feature design using web search mcp tool such as brave-search-mcp. or duckduckgo-mcp. 
+
 ## Step 3 — Feature-Level AC & Test Scenarios
 - `add_feature_acceptance_criteria` — 5–8 SMART criteria; first 1–2 must verify the intention directly.
 - `add_feature_test_scenarios` — 1:1+ mapping to AC; first scenario = end-to-end intention validation (P0).

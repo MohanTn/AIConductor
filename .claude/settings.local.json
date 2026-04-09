@@ -63,7 +63,9 @@
       "WebSearch",
       "Bash(timeout 15 npm start:*)",
       "Bash(npm run:*)",
-      "Bash(git branch:*)"
+      "Bash(git branch:*)",
+      "mcp__duckduckgo__search",
+      "mcp__duckduckgo__fetch_content"
     ]
   },
   "spinnerTipsEnabled": false,
