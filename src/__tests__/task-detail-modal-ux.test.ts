@@ -8,7 +8,7 @@
  *     filesChanged from transition additionalData (drives the T03 feature).
  */
 
-import { getBadgeClass } from '../client/utils/badge-utils.js';
+import { getBadgeClass, formatStatus } from '../client/utils/badge-utils.js';
 import { getFilesChanged } from '../client/utils/transition-utils.js';
 
 // ---------------------------------------------------------------------------
@@ -54,6 +54,60 @@ describe('getBadgeClass', () => {
   it('returns badge-pending for unknown/empty statuses', () => {
     expect(getBadgeClass('')).toBe('badge-pending');
     expect(getBadgeClass('UnknownStatus')).toBe('badge-pending');
+  });
+
+  it('returns badge-pending for InRefinement', () => {
+    expect(getBadgeClass('InRefinement')).toBe('badge-pending');
+  });
+
+  it('returns badge-pending for ToDo', () => {
+    expect(getBadgeClass('ToDo')).toBe('badge-pending');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 3. formatStatus – formatting status strings for display
+// ---------------------------------------------------------------------------
+
+describe('formatStatus', () => {
+  it('returns empty string for empty input', () => {
+    expect(formatStatus('')).toBe('');
+  });
+
+  it('returns empty string for null-like input', () => {
+    expect(formatStatus(null as any)).toBe('');
+    expect(formatStatus(undefined as any)).toBe('');
+  });
+
+  it('formats InProgress with space before capital letter', () => {
+    expect(formatStatus('InProgress')).toBe('In Progress');
+  });
+
+  it('formats PendingProductDirector with spaces', () => {
+    expect(formatStatus('PendingProductDirector')).toBe('Pending Product Director');
+  });
+
+  it('formats ReadyForDevelopment with spaces', () => {
+    expect(formatStatus('ReadyForDevelopment')).toBe('Ready For Development');
+  });
+
+  it('formats single word without changes', () => {
+    expect(formatStatus('Done')).toBe('Done');
+  });
+
+  it('handles multiple consecutive capitals', () => {
+    expect(formatStatus('InQA')).toBe('In Q A');
+  });
+
+  it('handles existing spaces correctly', () => {
+    const status = 'Already Formatted';
+    // formatStatus adds space before capital letters, so "Formatted" becomes " Formatted"
+    expect(formatStatus(status)).toBe('Already  Formatted');
+  });
+
+  it('handles complex status names', () => {
+    expect(formatStatus('PendingSecurityOfficer')).toBe('Pending Security Officer');
+    expect(formatStatus('NeedsRefinement')).toBe('Needs Refinement');
   });
 });
 

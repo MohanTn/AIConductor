@@ -2,8 +2,8 @@
  * Unit tests for Board component (flat kanban layout)
  */
 
-import { calculateProgress } from '../client/services/progressCalculator';
-import { Task } from '../client/types';
+import { calculateProgress, getProgressColor, getProgressLabel } from '../client/services/progressCalculator';
+import { Task } from '../types';
 
 describe('Board Component - Flat Kanban Layout', () => {
   describe('calculateProgress - Milestone-based calculation', () => {
@@ -238,6 +238,71 @@ describe('Board Component - Flat Kanban Layout', () => {
       expect(result.completedCount).toBe(25);
       // 50% of 50% + 25% of 50% + 25% of 100% = 25% + 12.5% + 25% = 62.5%
       expect(result.percentage).toBe(63); // Rounded
+    });
+
+    it('should handle unknown task status (default fallback)', () => {
+      const tasks: Task[] = [
+        { taskId: 'T01', title: 'T', description: '', status: 'UnknownStatus' as any, orderOfExecution: 1, acceptanceCriteria: [], testScenarios: [] },
+      ];
+      const result = calculateProgress(tasks);
+
+      // Unknown status defaults to 'refinement' phase
+      expect(result.refinementCount).toBe(1);
+      expect(result.developmentCount).toBe(0);
+      expect(result.completedCount).toBe(0);
+      expect(result.percentage).toBe(50); // 1/1 refinement * 50%
+    });
+  });
+
+  describe('getProgressColor', () => {
+    it('returns red (#f44336) for 0%', () => {
+      expect(getProgressColor(0)).toBe('#f44336');
+    });
+
+    it('returns red (#f44336) for < 25%', () => {
+      expect(getProgressColor(1)).toBe('#f44336');
+      expect(getProgressColor(24)).toBe('#f44336');
+    });
+
+    it('returns orange (#ff9800) for 25-49%', () => {
+      expect(getProgressColor(25)).toBe('#ff9800');
+      expect(getProgressColor(49)).toBe('#ff9800');
+    });
+
+    it('returns blue (#2196f3) for 50-74%', () => {
+      expect(getProgressColor(50)).toBe('#2196f3');
+      expect(getProgressColor(74)).toBe('#2196f3');
+    });
+
+    it('returns green (#4caf50) for 75-99%', () => {
+      expect(getProgressColor(75)).toBe('#4caf50');
+      expect(getProgressColor(99)).toBe('#4caf50');
+    });
+
+    it('returns green (#4caf50) for 100%', () => {
+      expect(getProgressColor(100)).toBe('#4caf50');
+    });
+  });
+
+  describe('getProgressLabel', () => {
+    it('returns "Not Started" for 0%', () => {
+      expect(getProgressLabel(0)).toBe('Not Started');
+    });
+
+    it('returns "In Refinement" for 1-49%', () => {
+      expect(getProgressLabel(1)).toBe('In Refinement');
+      expect(getProgressLabel(25)).toBe('In Refinement');
+      expect(getProgressLabel(49)).toBe('In Refinement');
+    });
+
+    it('returns "In Development" for 50-99%', () => {
+      expect(getProgressLabel(50)).toBe('In Development');
+      expect(getProgressLabel(75)).toBe('In Development');
+      expect(getProgressLabel(99)).toBe('In Development');
+    });
+
+    it('returns "Completed" for 100%', () => {
+      expect(getProgressLabel(100)).toBe('Completed');
     });
   });
 });
