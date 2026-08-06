@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>hybrid-retrieval</title>
+<style>
+  :root {
+    --bg: #0e1116; --panel: #161b22; --line: #2a313a; --text: #e6edf3;
+    --dim: #8b949e; --accent: #4493f8; --ok: #3fb950; --warn: #d29922; --bad: #f85149;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#fff; --panel:#f6f8fa; --line:#d0d7de; --text:#1f2328; --dim:#656d76; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.5 system-ui, sans-serif; }
+  header { display:flex; gap:16px; align-items:center; padding:12px 20px;
+           border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  h1 { font-size:15px; margin:0; font-weight:600; letter-spacing:.02em; }
+  select, input, button, textarea {
+    background:var(--panel); color:var(--text); border:1px solid var(--line);
+    border-radius:6px; padding:6px 10px; font:inherit; }
+  button { cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button:disabled { opacity:.5; cursor:default; }
+  nav { display:flex; gap:4px; padding:0 20px; border-bottom:1px solid var(--line); }
+  nav button { border:0; border-radius:0; background:none; padding:10px 14px; color:var(--dim);
+               border-bottom:2px solid transparent; }
+  nav button.active { color:var(--text); border-bottom-color:var(--accent); }
+  main { padding:20px; max-width:1200px; }
+  .grid { display:grid; gap:12px; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:12px 14px; }
+  .card .k { color:var(--dim); font-size:12px; text-transform:uppercase; letter-spacing:.05em; }
+  .card .v { font-size:22px; font-weight:600; margin-top:4px; font-variant-numeric:tabular-nums; }
+  .card .s { color:var(--dim); font-size:12px; }
+  h2 { font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--dim);
+       margin:26px 0 10px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:7px 10px; border-bottom:1px solid var(--line);
+           vertical-align:top; }
+  th { color:var(--dim); font-weight:600; font-size:12px; }
+  td.num { text-align:right; font-variant-numeric:tabular-nums; font-family:var(--mono); }
+  code, .mono { font-family:var(--mono); font-size:12px; }
+  .flow { display:flex; gap:8px; overflow-x:auto; padding-bottom:6px; }
+  .stage { flex:0 0 150px; border:1px solid var(--line); border-radius:8px; padding:10px;
+           background:var(--panel); opacity:.42; }
+  .stage.ran { opacity:1; border-color:var(--accent); }
+  .stage.skipped { opacity:1; border-color:var(--warn); }
+  .stage .n { font-weight:600; font-size:13px; }
+  .stage .ms { float:right; color:var(--dim); font-family:var(--mono); font-size:11px; }
+  .stage .d { color:var(--dim); font-size:11px; margin-top:6px; word-break:break-word; }
+  .pill { display:inline-block; padding:1px 8px; border-radius:999px; font-size:11px;
+          border:1px solid var(--line); color:var(--dim); }
+  .pill.ok { color:var(--ok); border-color:var(--ok); }
+  .pill.warn { color:var(--warn); border-color:var(--warn); }
+  .pill.bad { color:var(--bad); border-color:var(--bad); }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .cfg { display:grid; grid-template-columns:220px 160px 1fr; gap:8px 12px; align-items:center; }
+  .cfg .name { font-family:var(--mono); font-size:12px; }
+  .cfg .help { color:var(--dim); font-size:12px; }
+  .changed input { border-color:var(--warn); }
+  .err { color:var(--bad); }
+  .muted { color:var(--dim); }
+  textarea { width:100%; min-height:70px; font-family:var(--mono); }
+</style>
+</head>
+<body>
+<header>
+  <h1>hybrid&#8209;retrieval</h1>
+  <select id="repo"></select>
+  <span id="daemon" class="pill">daemon ?</span>
+  <span style="flex:1"></span>
+  <button id="refresh">Refresh</button>
+</header>
+<nav>
+  <button data-tab="overview" class="active">Overview</button>
+  <button data-tab="probe">Pipeline</button>
+  <button data-tab="traces">Traces</button>
+  <button data-tab="config">Config</button>
+</nav>
+<main>
+  <section id="overview"></section>
+  <section id="probe" hidden></section>
+  <section id="traces" hidden></section>
+  <section id="config" hidden></section>
+</main>
+
+<script>
+const $ = (s, r = document) => r.querySelector(s);
+const el = (tag, attrs = {}, ...kids) => {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === 'class') n.className = v;
+    else if (k === 'html') n.innerHTML = v;
+    else if (v !== null && v !== undefined) n.setAttribute(k, v);
+  }
+  for (const kid of kids.flat()) if (kid !== null && kid !== undefined)
+    n.append(kid.nodeType ? kid : document.createTextNode(kid));
+  return n;
+};
+const state = { repo: null, config: null, dirty: {} };
+
+async function api(path, opts) {
+  const res = await fetch(path, opts);
+  const body = await res.json().catch(() => ({ error: 'bad response' }));
+  if (!res.ok) throw new Error(body.error || res.statusText);
+  return body;
+}
+const num = (n) => (n ?? 0).toLocaleString();
+const card = (k, v, s) => el('div', { class: 'card' },
+  el('div', { class: 'k' }, k), el('div', { class: 'v' }, v),
+  s ? el('div', { class: 's' }, s) : null);
+
+// -- tabs -------------------------------------------------------------------
+for (const btn of document.querySelectorAll('nav button')) {
+  btn.onclick = () => {
+    for (const b of document.querySelectorAll('nav button')) b.classList.toggle('active', b === btn);
+    for (const s of document.querySelectorAll('main section')) s.hidden = s.id !== btn.dataset.tab;
+    render(btn.dataset.tab);
+  };
+}
+
+// -- overview ---------------------------------------------------------------
+async function renderOverview() {
+  const box = $('#overview');
+  box.replaceChildren(el('p', { class: 'muted' }, 'Loading...'));
+  try {
+    const s = await api('/api/status?repo=' + encodeURIComponent(state.repo));
+    const densePct = s.files ? Math.round((s.dense_ready / s.files) * 100) : 0;
+    box.replaceChildren(
+      el('div', { class: 'grid' },
+        card('Files', num(s.files), s.by_lang.map(l => l.lang + ' ' + l.files).join(', ')),
+        card('Chunks', num(s.chunks)),
+        card('Symbols', num(s.symbols)),
+        card('Import edges', num(s.edges), num(s.imports) + ' raw refs'),
+        card('Dense ready', densePct + '%', s.embedder ? s.embedder.model + ' @ ' + s.embedder.dim + 'd' : 'no embeddings'),
+        card('Traces', num(s.traces), 'index ' + (s.db_bytes / 1e6).toFixed(1) + ' MB')),
+      el('h2', {}, 'Reranker'),
+      s.ranker
+        ? el('div', {},
+            el('p', { class: 'muted' }, 'Trained on ' + s.ranker.n_queries + ' queries from ' + s.ranker.trained_on),
+            el('p', {}, el('span', { class: 'mono' }, 'gate: ' + JSON.stringify(s.ranker.gate))),
+            metricsTable(s.ranker.metrics))
+        : el('p', { class: 'muted' }, 'No ranker trained. Run hybrid-retrieval train-sessions.'));
+  } catch (e) { box.replaceChildren(el('p', { class: 'err' }, e.message)); }
+}
+
+function metricsTable(metrics) {
+  if (!metrics || !metrics.trained) return el('p', { class: 'muted' }, 'no held-out metrics recorded');
+  const keys = Object.keys(metrics.trained).filter(k => k !== 'queries');
+  return el('table', {},
+    el('tr', {}, el('th', {}, 'metric'), el('th', {}, 'fused'), el('th', {}, 'reranked'), el('th', {}, 'delta')),
+    keys.map(k => {
+      const b = metrics.baseline?.[k] ?? 0, t = metrics.trained[k] ?? 0;
+      return el('tr', {}, el('td', {}, k), el('td', { class: 'num' }, b.toFixed(3)),
+        el('td', { class: 'num' }, t.toFixed(3)),
+        el('td', { class: 'num' }, (t - b >= 0 ? '+' : '') + (t - b).toFixed(3)));
+    }));
+}
+
+// -- pipeline probe ---------------------------------------------------------
+function renderProbe() {
+  const box = $('#probe');
+  if (box.dataset.built) return;
+  box.dataset.built = '1';
+  const input = el('textarea', { id: 'prompt', placeholder: 'Type a prompt to watch it move through the pipeline...' });
+  const run = el('button', { class: 'primary' }, 'Run probe');
+  const out = el('div', { id: 'probeOut' });
+  run.onclick = async () => {
+    run.disabled = true;
+    out.replaceChildren(el('p', { class: 'muted' }, 'Running through the daemon...'));
+    try {
+      const r = await api('/api/probe', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repo: state.repo, prompt: input.value })
+      });
+      out.replaceChildren(probeView(r));
+    } catch (e) { out.replaceChildren(el('p', { class: 'err' }, e.message)); }
+    run.disabled = false;
+  };
+  box.replaceChildren(
+    el('p', { class: 'muted' }, 'Runs a real request through the daemon, exactly as the hook does, and shows every stage.'),
+    input, el('div', { class: 'row' }, run), out);
+}
+
+function probeView(r) {
+  const skipped = r.trace && r.trace.skipped;
+  const flow = el('div', { class: 'flow' }, r.stages.map(s => el('div',
+    { class: 'stage' + (s.ran ? ' ran' : '') + (s.key === 'skip' && skipped ? ' skipped' : '') },
+    el('div', {}, el('span', { class: 'ms' }, s.ms != null ? s.ms + 'ms' : ''), el('span', { class: 'n' }, s.label)),
+    el('div', { class: 'd' }, s.detail))));
+
+  const sel = (r.trace && r.trace.selected) || [];
+  const table = sel.length ? el('table', {},
+    el('tr', {}, el('th', {}, '#'), el('th', {}, 'file'), el('th', {}, 'model'),
+      el('th', {}, 'rrf'), el('th', {}, 'dense'), el('th', {}, 'sparse'), el('th', {}, 'hops')),
+    sel.map((c, i) => el('tr', {}, el('td', { class: 'num' }, i + 1), el('td', { class: 'mono' }, c.path),
+      el('td', { class: 'num' }, c.model_score), el('td', { class: 'num' }, c.rrf),
+      el('td', { class: 'num' }, c.dense_rank ?? '-'), el('td', { class: 'num' }, c.sparse_rank ?? '-'),
+      el('td', { class: 'num' }, c.ast_hops ?? '-'))))
+    : el('p', { class: 'muted' }, 'Nothing injected.');
+
+  const resp = r.response || {};
+  const tokens = resp.tokens || 0;
+  return el('div', {},
+    el('h2', {}, 'Stages'), flow,
+    el('div', { class: 'row', style: 'margin-top:12px' },
+      el('span', { class: 'pill ' + (skipped ? 'warn' : 'ok') }, skipped ? 'skipped' : 'injected'),
+      el('span', { class: 'pill' }, (resp.latency_ms ?? 0) + ' ms'),
+      el('span', { class: 'pill ' + (tokens > 10000 ? 'bad' : '') }, num(tokens) + ' tokens'),
+      tokens > 10000 ? el('span', { class: 'muted' },
+        'above ~10k the harness may spill hook output to a file instead of inlining it') : null),
+    el('h2', {}, 'Selected files'), table);
+}
+
+// -- traces -----------------------------------------------------------------
+async function renderTraces() {
+  const box = $('#traces');
+  box.replaceChildren(el('p', { class: 'muted' }, 'Loading...'));
+  try {
+    const { traces } = await api('/api/traces?limit=40&repo=' + encodeURIComponent(state.repo));
+    if (!traces.length) {
+      box.replaceChildren(el('p', { class: 'muted' }, 'No traces yet. Every hook request writes one, including skipped prompts.'));
+      return;
+    }
+    box.replaceChildren(el('table', {},
+      el('tr', {}, el('th', {}, 'when'), el('th', {}, 'prompt'), el('th', {}, 'outcome'),
+        el('th', {}, 'ms'), el('th', {}, 'tokens'), el('th', {}, 'files')),
+      traces.map(t => el('tr', {},
+        el('td', { class: 'mono' }, new Date(t.ts * 1000).toLocaleTimeString()),
+        el('td', {}, t.prompt.slice(0, 90)),
+        el('td', {}, el('span', { class: 'pill ' + (t.skipped ? 'warn' : t.decision === 'HIGH' ? 'ok' : '') },
+          t.skipped ? 'skipped' : (t.decision || 'no gate'))),
+        el('td', { class: 'num' }, Math.round(t.latency_ms)),
+        el('td', { class: 'num' }, num(t.injected_tokens)),
+        el('td', { class: 'mono' }, (t.selected || []).map(s => s.path.split('/').pop()).join(', ') || (t.skip_reason || ''))))));
+  } catch (e) { box.replaceChildren(el('p', { class: 'err' }, e.message)); }
+}
+
+// -- config -----------------------------------------------------------------
+const HELP = {
+  top_n: 'How many files to inject.',
+  max_tokens: 'Injection budget. Empty means uncapped. Note a single large file is always admitted whole.',
+  latency_budget_ms: 'Target end-to-end budget for the hook.',
+  'retrieval.dense_k': 'Vector candidates before fusion.',
+  'retrieval.sparse_k': 'BM25 candidates before fusion.',
+  'retrieval.fuse_to': 'Candidates kept after RRF, and the reranker input size.',
+  'retrieval.rrf_k': 'RRF damping constant.',
+  'retrieval.ast_depth': 'Import-graph expansion. Measured as harmful; 0 disables it.',
+  'retrieval.rescore_k': 'int8 hits rescored at full precision.',
+  'skip.min_prompt_chars': 'Floor for degenerate input.',
+  'skip.min_query_terms': 'Usable search terms required to bother retrieving.',
+  'index.debounce_ms': 'Quiet period before reindexing after a file change.',
+  'index.max_file_bytes': 'Files larger than this are never indexed.',
+  'embed.model_id': 'Embedding model. Changing it requires embed --reset.',
+  'embed.batch_size': 'Larger is not faster on a small GPU.',
+  'embed.min_chunk_tokens': 'Chunks below this skip the dense pass but stay searchable.',
+};
+const SKIP_KEYS = new Set(['socket', 'skip.patterns', 'embed.device', 'gate.mode']);
+
+async function renderConfig() {
+  const box = $('#config');
+  box.replaceChildren(el('p', { class: 'muted' }, 'Loading...'));
+  try {
+    const cfg = await api('/api/config?repo=' + encodeURIComponent(state.repo));
+    state.config = cfg; state.dirty = {};
+    const rows = [];
+    const walk = (obj, defaults, prefix) => {
+      for (const [k, v] of Object.entries(obj)) {
+        const path = prefix ? prefix + '.' + k : k;
+        if (v && typeof v === 'object' && !Array.isArray(v)) { walk(v, defaults[k] || {}, path); continue; }
+        if (SKIP_KEYS.has(path) || Array.isArray(v)) continue;
+        rows.push(field(path, v, defaults[k]));
+      }
+    };
+    walk(cfg.effective, cfg.defaults, '');
+    const save = el('button', { class: 'primary' }, 'Save to repo config');
+    save.onclick = () => saveConfig(cfg, 'repo');
+    const saveGlobal = el('button', {}, 'Save globally');
+    saveGlobal.onclick = () => saveConfig(cfg, 'global');
+    box.replaceChildren(
+      el('p', { class: 'muted' }, 'Repo file: ' + (cfg.repo_file || 'n/a') + ' — only values that differ from the defaults are written.'),
+      el('div', { class: 'cfg' }, rows),
+      el('div', { class: 'row', style: 'margin-top:16px' }, save, saveGlobal, el('span', { id: 'cfgMsg', class: 'muted' })));
+  } catch (e) { box.replaceChildren(el('p', { class: 'err' }, e.message)); }
+}
+
+function field(path, value, dflt) {
+  const isBool = typeof value === 'boolean';
+  const input = el('input', isBool
+    ? { type: 'checkbox', ...(value ? { checked: 'checked' } : {}) }
+    : { type: typeof value === 'number' ? 'number' : 'text', value: value ?? '', step: 'any' });
+  const wrap = el('div', {}, input);
+  input.oninput = () => {
+    const raw = isBool ? input.checked : input.value;
+    let parsed = raw;
+    if (!isBool && typeof value === 'number') parsed = raw === '' ? null : Number(raw);
+    if (!isBool && value === null && raw === '') parsed = null;
+    state.dirty[path] = parsed;
+    wrap.classList.toggle('changed', String(raw) !== String(value ?? ''));
+  };
+  return [el('div', { class: 'name' }, path), wrap,
+    el('div', { class: 'help' }, (HELP[path] || '') + (dflt !== undefined ? ' (default ' + JSON.stringify(dflt) + ')' : ''))];
+}
+
+async function saveConfig(cfg, scope) {
+  const msg = $('#cfgMsg');
+  const updates = {};
+  for (const [path, value] of Object.entries(state.dirty)) {
+    const parts = path.split('.');
+    let node = updates;
+    while (parts.length > 1) node = node[parts.shift()] ??= {};
+    node[parts[0]] = value;
+  }
+  if (!Object.keys(updates).length) { msg.textContent = 'nothing changed'; return; }
+  try {
+    const r = await api('/api/config', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repo: state.repo, updates, scope })
+    });
+    msg.textContent = 'saved to ' + r.written + ' — restart the daemon to apply';
+    renderConfig();
+  } catch (e) { msg.textContent = e.message; msg.className = 'err'; }
+}
+
+// -- boot -------------------------------------------------------------------
+function render(tab) {
+  if (!state.repo) return;
+  ({ overview: renderOverview, probe: renderProbe, traces: renderTraces, config: renderConfig }[tab] || (() => {}))();
+}
+
+async function boot() {
+  const health = await api('/api/health').catch(() => ({ running: false }));
+  const pill = $('#daemon');
+  pill.textContent = health.running ? 'daemon up' + (health.embedder ? ' · ' + health.embedder.split('/').pop() : '') : 'daemon down';
+  pill.className = 'pill ' + (health.running ? 'ok' : 'bad');
+
+  const { repos } = await api('/api/repos');
+  const sel = $('#repo');
+  sel.replaceChildren(...repos.map(r => el('option', { value: r.path }, r.name)));
+  if (!repos.length) { $('#overview').replaceChildren(el('p', { class: 'muted' }, 'No indexed repos found.')); return; }
+  state.repo = localStorage.getItem('repo') && repos.some(r => r.path === localStorage.getItem('repo'))
+    ? localStorage.getItem('repo') : repos[0].path;
+  sel.value = state.repo;
+  sel.onchange = () => { state.repo = sel.value; localStorage.setItem('repo', state.repo);
+    for (const s of document.querySelectorAll('main section')) delete s.dataset.built;
+    render(document.querySelector('nav button.active').dataset.tab); };
+  $('#refresh').onclick = () => boot();
+  render(document.querySelector('nav button.active').dataset.tab);
+}
+boot();
+</script>
+</body>
+</html>

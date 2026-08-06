@@ -1,0 +1,112 @@
+sequenceDiagram
+    autonumber
+    actor User
+    participant Harness
+    participant Hook as PreProcessHook
+    participant Chroma as ChromaDB (local)
+    participant Sparse as SparseRetriever (local)
+    participant Scorer as ScoringModel
+    participant Gate as ConfidenceGate
+    participant Fallback as FallbackLoop
+    participant Writer as WriterModel (Opus)
+    participant Verifier as SilentVerifier
+
+    rect rgb(240, 248, 255)
+        Note over Harness, Verifier: Tier A (Local/Cheap): Chroma, Sparse, Scorer, Gate, Fallback, Verifier
+        Note over Writer: Tier B (Expensive): Writer only
+    end
+
+    %% ========== STAGE 0: HOOK + CHROMA PRE-PROCESSING ==========
+    User ->> Harness: POST /generate<br/>{ prompt: "Add JWT refresh token rotation",<br/>  repo_id: "dotnet-api", git_ref: "heads/main" }
+    activate Harness
+
+    Harness ->> Hook: onPromptReceived(payload)
+    activate Hook
+
+    Hook ->> Chroma: diff_and_refresh(git_hash, file_list)
+    activate Chroma
+    Note over Chroma: IN: git_hash, file_deltas (from git diff)<br/>---<br/>PSEUDO-CODE:<br/>1. loaded_manifest = load_manifest(git_hash)<br/>2. FOR each file IN loaded_manifest.files:<br/>   current_hash = xxhash3_128(file.path)<br/>   IF current_hash != stored_hash:<br/>       invalidate_chunks(file.path)<br/>3. FOR each invalid_chunk:<br/>   embed = local_model.encode(chunk.content)<br/>   chroma_db.upsert(id=chunk.id, vector=embed,<br/>                   metadata={"path": file.path, "git": git_hash})<br/>4. ast_graph = rebuild_ast_from_changed_files(file.list)<br/>---<br/>OUT: { status: "ready", version_hash: "abc123",<br/>       ast_graph: { nodes: ["AuthController.cs"],<br/>                    edges: [["AuthController.cs", "JwtService.cs"]] } }
+    Chroma -->> Hook: snapshot_ready
+    deactivate Chroma
+    deactivate Hook
+
+    %% ========== STAGE 1: HYBRID RETRIEVAL (DENSE + SPARSE) ==========
+    par Dense Retrieval (Local)
+        Harness ->> Chroma: query_dense(prompt_embedding, top_k=100)
+        activate Chroma
+        Note over Chroma: IN: embedding=[0.12, -0.45, ...] (768-dim)<br/>---<br/>PSEUDO-CODE:<br/>results = chroma_db.query(<br/>    query_embeddings=[embedding],<br/>    n_results=100,<br/>    where={"git": active_version_hash},<br/>    include=["metadatas", "distances"]<br/>)<br/>FOR each hit:<br/>  dense_score = 1 - (distance / 2)  # cosine normalization<br/>---<br/>OUT: [{ path: "AuthController.cs", dense_score: 0.92 },<br/>      { path: "JwtService.cs", dense_score: 0.88 }, ...]
+        Chroma -->> Harness: dense_candidates
+        deactivate Chroma
+    and Sparse Retrieval (Local)
+        Harness ->> Sparse: query_sparse(prompt_tokens, ast_graph)
+        activate Sparse
+        Note over Sparse: IN: tokens=["JWT","refresh","token","rotation"]<br/>     ast_graph (structural adjacency)<br/>---<br/>PSEUDO-CODE:<br/>1. bm25_results = inverted_index.search(tokens, top_k=80)<br/>2. boost_results = ast_graph.traverse_imports(<br/>     entrypoints=bm25_results.paths, depth=2)<br/>3. FOR each path:<br/>   sparse_score = bm25_score + (0.1 * boost_factor)<br/>---<br/>OUT: [{ path: "AuthController.cs", sparse_score: 0.85 },<br/>      { path: "Startup.cs", sparse_score: 0.72 }, ...]
+        Sparse -->> Harness: sparse_candidates
+        deactivate Sparse
+    end
+
+    %% ========== STAGE 2: FUSION -> TOP 100 ==========
+    Harness ->> Harness: normalize_dedup_fuse(dense, sparse)
+    activate Harness
+    Note over Harness: IN: dense_list (100 items) + sparse_list (100 items)<br/>---<br/>PSEUDO-CODE (Reciprocal Rank Fusion):<br/>UNION_SET = dense_list ∪ sparse_list<br/>FOR each path IN UNION_SET:<br/>  rank_dense = index_of(path, dense_list) or INF<br/>  rank_sparse = index_of(path, sparse_list) or INF<br/>  rrf_score = (1/(60+rank_dense)) + (1/(60+rank_sparse))<br/>SORT BY rrf_score DESC<br/>TAKE TOP 100<br/>---<br/>OUT: [ { path: "AuthController.cs", fused_score: 0.031 },<br/>       { path: "JwtService.cs", fused_score: 0.029 },<br/>       { path: "appsettings.json", fused_score: 0.015 }, ...]
+    deactivate Harness
+
+    %% ========== STAGE 3: LOCAL SCORING (Cross-Attention / LoRA) ==========
+    Harness ->> Scorer: score_candidates(prompt, top_100, first_10_lines)
+    activate Scorer
+    Note over Scorer: IN: prompt (string), top_100 (list of paths),<br/>     first_10_lines (string) for each candidate<br/>---<br/>PSEUDO-CODE (Fine-tuned Quantized 3B Model):<br/>FOR each candidate IN top_100:<br/>  input_text = "[PROMPT] " + prompt + " [FILE] " + candidate.path + " " + candidate.first_10_lines<br/>  logit = local_lora_model.forward(input_text)  # rank=16 LoRA adapter<br/>  # logit represents alignment with expert retrieval behavior<br/>---<br/>OUT: [ { path: "AuthController.cs", score: 2.4 },<br/>       { path: "JwtService.cs", score: 1.8 },<br/>       { path: "Program.cs", score: 0.4 }, ... ]
+    Scorer -->> Harness: score_vector
+    deactivate Scorer
+
+    %% ========== STAGE 4: CONFIDENCE GATING & FALLBACK ==========
+    Harness ->> Gate: evaluate(scores)
+    activate Gate
+    Note over Gate: IN: score_vector (100 logits)<br/>---<br/>PSEUDO-CODE:<br/>softmax_scores = softmax(score_vector / 0.7) # temperature<br/>max_prob = max(softmax_scores)<br/>margin = softmax_scores[0] - softmax_scores[1]<br/>IF max_prob > 0.85 AND margin > 0.15:<br/>    confidence = HIGH<br/>ELSE:<br/>    confidence = LOW<br/>---<br/>OUT: decision: "HIGH" or "LOW"
+    Gate -->> Harness: decision
+    deactivate Gate
+
+    alt High Confidence (Fast Path)
+        Harness ->> Harness: select_top_5()
+        Note over Harness: Top 5: AuthController.cs, JwtService.cs,<br/>appsettings.json, Program.cs, IJwtService.cs
+    else Low Confidence / High Entropy (Fallback)
+        Harness ->> Fallback: targeted_grep_and_cat()
+        activate Fallback
+        Note over Fallback: IN: prompt_keywords: ["Jwt", "RefreshToken"]<br/>---<br/>PSEUDO-CODE (Deterministic):<br/>1. files = grep -l -r "RefreshToken" --include="*.cs" ./src<br/>2. files += grep -l -r "JwtSecurityToken" --include="*.cs" ./src<br/>3. FOR each file IN files: content = cat(file)<br/>4. VALIDATE content contains necessary imports<br/>---<br/>OUT: verified_top_5 = [ "AuthController.cs", "JwtService.cs", ... ]
+        Fallback -->> Harness: verified_top_5
+        deactivate Fallback
+    end
+
+    %% ========== STAGE 5: ESCALATION & WRITER (TIER B) ==========
+    Note over Harness: ----- ESCALATION BOUNDARY (Local -> Cloud) -----
+    Harness ->> Harness: assemble_slim_context(top_5)
+    activate Harness
+    Note over Harness: IN: top_5 file contents + AST subtree (depth=2)<br/>     + hardcoded: .csproj / package.json<br/>---<br/>PSEUDO-CODE:<br/>context = "System: You are a .NET 8 expert. No tools.<br/>           Write code. Here are relevant files:\n"<br/>FOR each file IN top_5:<br/>  context += "--- " + file.path + " ---\n" + file.content<br/>context += "AST Tree: " + ast_graph.stringify_subtree(top_5)<br/>context += "Dependencies: Microsoft.AspNetCore.Authentication.JwtBearer"<br/>---<br/>OUT: total_context_tokens = 3,842 (< 4k limit)
+    deactivate Harness
+
+    Harness ->> Writer: POST /v1/messages (Opus, streaming=True)
+    activate Writer
+    Note over Writer: IN: system_prompt + 3.8k context<br/>---<br/>PSEUDO-CODE (Cloud Inference):<br/>KV Cache = allocate(prompt_tokens)<br/>WHILE not done:<br/>  token = sample(top_k=40, temperature=0.3)<br/>  append to KV Cache<br/>  yield token (streaming)<br/>---<br/>OUT: Streamed Unified Diff
+    Writer -->> User: stream diff (eventsource)
+    Writer -->> Harness: raw_diff_payload
+    deactivate Writer
+    Harness ->> Verifier: validate_diff(diff, git_hash)
+    activate Verifier
+    Note over Verifier: IN: unified_diff, git_hash<br/>---<br/>PSEUDO-CODE (Local compile):<br/>1. apply_diff_to_temp_workspace(diff, git_hash)<br/>2. cd temp_workspace && dotnet build --no-incremental 2>&1 > compile.log<br/>3. IF exit_code == 0: status = PASS<br/>4. ELSE: status = FAIL,<br/>   missing = regex_search(stderr, "CS0246|CS0103", group="type")<br/>   # Example: missing "Microsoft.IdentityModel.Tokens"<br/>---<br/>OUT: { status: "FAIL", error: "CS0246", symbol: "Microsoft.IdentityModel.Tokens" }
+    deactivate Verifier
+
+    alt Compilation PASSES
+        Verifier -->> Harness: status OK
+        Harness -->> User: "Apply Changes" (200 OK)
+    else Compilation FAILS (Missing Import)
+        Verifier -->> Harness: error + missing_symbol
+        Harness ->> Fallback: grep_missing_symbol(missing_symbol)
+        activate Fallback
+        Fallback -->> Harness: import_line<br/>(e.g., "using Microsoft.IdentityModel.Tokens")
+        deactivate Fallback
+        Note over Harness: SINGLE-HOP REPAIR (No re-retrieval)<br/>Pseudo: inject import_line into the exact file section
+        Harness ->> Writer: re-prompt_with_patch(patch)
+        activate Writer
+        Writer -->> User: stream_corrected_diff
+        deactivate Writer
+    end
+    deactivate Harness

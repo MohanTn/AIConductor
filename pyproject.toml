@@ -1,0 +1,48 @@
+[project]
+name = "hybrid-retrieval"
+version = "0.1.0"
+description = "Local hybrid retrieval pipeline that injects relevant repo files into Claude Code context"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "sqlite-vec>=0.1.6",
+    "xxhash>=3.5.0",
+    "pathspec>=0.12.1",
+    "tree-sitter>=0.23.0",
+    "tree-sitter-language-pack>=0.7.0",
+    "watchdog>=6.0.0",
+]
+
+[project.optional-dependencies]
+# Heavy, GPU-bound. Not needed for indexing, sparse retrieval or the test suite.
+dense = ["sentence-transformers>=3.3.0", "torch>=2.5.0"]
+rank = ["lightgbm>=4.5.0", "numpy>=2.0.0"]
+
+[dependency-groups]
+dev = ["pytest>=8.3.0", "pytest-cov>=6.0.0", "ruff>=0.8.0"]
+
+[project.scripts]
+hybrid-retrieval = "hybrid_retrieval.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hybrid_retrieval"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/hybrid_retrieval/dashboard/static" = "hybrid_retrieval/dashboard/static"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+# Sample code shaped to exercise specific grammar nodes, not code to be linted.
+extend-exclude = ["tests/fixtures"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]

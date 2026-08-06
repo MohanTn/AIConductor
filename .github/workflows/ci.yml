@@ -1,56 +1,39 @@
-name: CI
+name: ci
 
 on:
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
-    branches: ["**"]
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        node-version: [18.x]
-
-    permissions:
-      contents: read
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29
-
-      - name: Set up Node.js
-        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af
+      - uses: actions/checkout@v4
         with:
-          node-version: ${{ matrix.node-version }}
-          cache: npm
+          fetch-depth: 0        # git-history label mining and Tier 1 eval need real history
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build
-        run: npm run build
-
-      - name: Run linting
-        run: npm run lint
-
-      - name: Run tests
-        run: npm test -- --coverage
-
-      - name: Display coverage summary
-        if: always()
-        run: |
-          if [ -f coverage/coverage-summary.json ]; then
-            echo "=== Coverage Summary ==="
-            cat coverage/coverage-summary.json | jq '.total'
-          fi
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
+      - uses: astral-sh/setup-uv@v5
         with:
-          files: ./coverage/lcov.info
-          flags: unittests
-          fail_ci_if_error: false
-          verbose: true
+          enable-cache: true
+
+      - run: uv sync --all-groups
+
+      - name: install ripgrep
+        run: sudo apt-get install -y ripgrep   # the LOW-confidence fallback shells out to rg
+
+      - name: lint
+        run: uv run ruff check .
+
+      - name: test
+        run: uv run pytest --cov=hybrid_retrieval --cov-report=term-missing
+
+      # Tier 1 regression gate. bench/tier1_eval.py needs a real repo with real history, so CI
+      # runs the same arm set over a synthetic repo instead: it proves mining, retrieval, features
+      # and metrics still work end to end and that the pipeline still beats a bad ordering.
+      # Real quality numbers come from bench/tier1_sessions.py on a machine with session history.
+      - name: tier 1 regression gate
+        run: uv run pytest tests/test_tier1_ci.py -v
+
+      - name: doctor
+        run: uv run hybrid-retrieval doctor

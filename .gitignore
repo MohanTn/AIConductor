@@ -1,12 +1,21 @@
-node_modules/
+__pycache__/
+*.py[cod]
+.venv/
+.bootstrap/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 dist/
-*.log
-*.backup-*
-.DS_Store
-.env
-.vscode/
-coverage/
-*.tsbuildinfo
-*task-*.db
-test-*.db
-test-*.db/
+build/
+*.egg-info/
+
+# local index + daemon state
+.retrieval/
+*.db
+*.db-shm
+*.db-wal
+
+# generated
+.claude/repo-map.md
+docs/benchmarks/*/raw/
