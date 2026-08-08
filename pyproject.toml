@@ -5,6 +5,7 @@ description = "Local hybrid retrieval pipeline that injects relevant repo files 
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "numpy>=2.0.0",
     "sqlite-vec>=0.1.6",
     "xxhash>=3.5.0",
     "pathspec>=0.12.1",
