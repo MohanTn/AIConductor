@@ -161,6 +161,19 @@ def test_low_confidence_replaces_the_ranking(indexed):
 # -- tracing ----------------------------------------------------------------
 
 
+def test_paths_only_skips_reading_the_files(indexed):
+    """The hook renders the payload itself; assembling one it discards is pure waste."""
+    repo, conn = indexed
+    full = retrieve(repo, "rotate the refresh token", conn=conn, cfg=Config())
+    lean = retrieve(
+        repo, "rotate the refresh token", conn=conn, cfg=Config(), assemble_context=False
+    )
+    assert lean.paths == full.paths, "the ranking must be identical"
+    assert lean.context.paths == full.paths, "callers still learn what was selected"
+    assert lean.context.text == "" and full.context.text != ""
+    assert "assemble" not in lean.stage_ms, "no assembly stage should have run"
+
+
 def test_trace_records_a_normal_query(indexed):
     repo, conn = indexed
     result = retrieve(repo, "rotate the refresh token", conn=conn, cfg=Config())

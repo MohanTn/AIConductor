@@ -161,7 +161,14 @@ def retrieve(
     ranker=None,
     history: History | None = None,
     apply_skip: bool = True,
+    assemble_context: bool = True,
 ) -> RetrievalResult:
+    """Retrieve for a prompt.
+
+    ``assemble_context=False`` returns the ranking without reading the selected files. Callers
+    that render the payload themselves — which is the shape that actually pays for itself, see
+    SPEC section 10j — would otherwise pay for a full-file assembly they discard.
+    """
     cfg = cfg or Config.load(Path(repo_root))
     started = time.perf_counter()
 
@@ -212,9 +219,12 @@ def retrieve(
                 fell_back = True
 
     selected = ordered[: cfg.top_n]
-    tick = time.perf_counter()
-    context = assemble(repo_root, selected, top_n=cfg.top_n, max_tokens=cfg.max_tokens)
-    stage_ms["assemble"] = (time.perf_counter() - tick) * 1000
+    if assemble_context:
+        tick = time.perf_counter()
+        context = assemble(repo_root, selected, top_n=cfg.top_n, max_tokens=cfg.max_tokens)
+        stage_ms["assemble"] = (time.perf_counter() - tick) * 1000
+    else:
+        context = ContextPack(text="", paths=[c.path for c in selected])
 
     return RetrievalResult(
         selected=selected,

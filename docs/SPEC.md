@@ -657,6 +657,49 @@ same way as the 32.7% top-5 precision measured in §10e.
 Retrieval is already good enough to put the right file in the top five for 90% of prompts (§10h);
 the delivery mechanism is what loses the money.
 
+## 10j. Original design versus what runs
+
+`docs/design-input-pipeline.mmd` is the input design. `docs/current-pipeline.mmd` is what actually
+executes, entered from `claude/hooks/context-augment.py`. This table is the ledger between them:
+every row that changed, changed because something was measured.
+
+| original | status | what runs, and why |
+|---|---|---|
+| ChromaDB | **replaced** | sqlite-vec in the same database as FTS5, so dense and sparse update in one transaction and cannot skew. No ANN, so int8 scan plus float32 rescore. |
+| git-hash freshness | **replaced** | Working-tree content hash. Keying on commits leaves the index stale for exactly the files the agent is editing. |
+| Sparse BM25 | **kept, extended** | FTS5 over content, path, symbol and an identifier-split `ident` column. Without `ident`, "refresh token" cannot match `RotateRefreshToken` — the diagram's own example. |
+| AST boost, depth 2 | **disabled** | Neutral-to-negative on three independent datasets, the last with real import graphs. Disabling moved the pipeline +11.3pp → +14.1pp. The graph still feeds the ranker as degree features. |
+| RRF, "top 100 of 100" | **kept, fixed** | The original cut removed nothing. Now cuts to 50, halving every later stage. |
+| 3B LoRA scorer | **replaced** | LightGBM over 22 cheap features. 100 forward passes of a 3B model is minutes on CPU against a ~1-2s budget. Sub-10ms, and trainable on the hardware that runs it. |
+| "expert retrieval behaviour" labels | **replaced** | Real prompts mined from Claude Code, pi and Copilot CLI session history. Commit messages scored +0.7pp over ripgrep; session prompts scored +20.4pp. |
+| Gate: softmax, max_prob > 0.85 | **replaced** | Unreachable over 100 logits, and it judged one file while five ship. Now judges the selected *set*: top score plus the rank-N vs rank-N+1 margin, calibrated on held-out data. |
+| grep fallback | **kept** | ripgrep specifically (honours .gitignore, skips binaries), and it is the same function the benchmark uses as arm B0. |
+| Assemble top-5 full files | **superseded** | The daemon still assembles, but the hook discards it and renders the paths itself at a 2,000-token budget. See below. |
+| Writer (Opus) | **deleted** | Claude Code is the writer. The pipeline never calls a cloud API. |
+| SilentVerifier + single-hop repair | **never built** | Out of scope once the hook, rather than a `/generate` endpoint, became the surface. |
+
+**The bottleneck moved, and it is no longer retrieval.** The original diagram treats stages 1-4 as
+the hard part and budgets 4k tokens for delivery as an afterthought. Measurement inverted that:
+
+* Retrieval is good. hit@5 = 0.899 on held-out real prompts, +20.4pp over ripgrep.
+* Delivery is where the money goes. Break-even for an injection is **~2,095 tokens**, because the
+  agent only made 1-2 discovery calls to eliminate in the first place. Whole-file injection
+  measured at **1.86x** the baseline token cost, and hook output above ~40KB is spilled by the
+  harness to a file whose pointer the agent then spends turns reading.
+* So the live system uses the pipeline for *ranking* and `context-augment.py`'s tiered renderer for
+  *delivery*: full minified content for small files, signatures only for large ones, inside an
+  8,000-character budget that sits just under break-even.
+
+**Wasted work this mapping exposed, and how small it turned out to be.** The daemon assembled full
+file contents for every request while the hook used only the ranked paths. Requests now carry
+`assemble: false`, and the daemon skips reading the selected files entirely.
+
+Measured on Polly, a 17,438-token selection: **10.24ms → 9.76ms**, about 0.5ms. The page cache
+makes five file reads nearly free, so this is not a performance win and should not be described as
+one. What it buys is that the daemon no longer materialises a 100KB string per prompt, and the
+request now states what the caller actually wants. The saving scales with selection size, so it is
+largest exactly where the payload was already the problem.
+
 ## 11. Open items
 
 - VRAM and per-repo file counts, still unmeasured.

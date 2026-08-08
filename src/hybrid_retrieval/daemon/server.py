@@ -301,6 +301,9 @@ class Daemon:
             cfg=state.cfg,
             ranker=state.ranker,
             history=state.history,
+            # Clients that render the payload themselves ask for paths only, so the daemon does
+            # not read five files and build a string they will discard.
+            assemble_context=bool(request.get("assemble", True)),
         )
         trace_id = trace.record(
             state.conn, prompt=prompt, result=result, session_id=request.get("session_id")
