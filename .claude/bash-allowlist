@@ -2,3 +2,5 @@ uv
 uvx
 ruff
 claude
+nix
+nix-instantiate

@@ -1,0 +1,82 @@
+sequenceDiagram
+    autonumber
+    actor User
+    participant CC as Claude Code
+    participant Augment as context-augment.py<br/>(UserPromptSubmit hook)
+    participant Daemon as hybrid-retrieval daemon<br/>(resident, one per machine)
+    participant Index as SQLite index<br/>(FTS5 + sqlite-vec)
+    participant Ranker as LightGBM reranker
+    participant Rg as ripgrep
+
+    rect rgb(240, 248, 255)
+        Note over CC, Rg: Everything below is local. Claude Code is the writer;<br/>there is no separate model in this pipeline.
+    end
+
+    %% ========== STAGE 0: INDEX MAINTENANCE (OFF THE REQUEST PATH) ==========
+    Note over Daemon, Index: CONTINUOUS, never on the request path.<br/>watchdog observes the working tree, 1s debounce.<br/>Freshness is xxhash3-128 of working-tree CONTENT, not the git hash:<br/>the files the agent is editing are uncommitted, and those are<br/>exactly the ones retrieval must not be stale on.<br/>Changed files are re-chunked (tree-sitter, symbol level),<br/>FTS5 rows and import edges rebuilt, dense marked pending.<br/>MEASURED: 798-file repo indexes in 3.1s; incremental update 12ms.
+
+    %% ========== STAGE 1: THE HOOK ==========
+    User ->> CC: types a prompt
+    CC ->> Augment: UserPromptSubmit (JSON on stdin)
+    activate Augment
+
+    Note over Augment: CHEAP GATE (no subprocess, no I/O):<br/>skip continuations and slash commands only.<br/>Length is NOT used: "fix JWT refresh bug" is 19 chars<br/>and answerable; "could you take another look" is 27 and is not.
+
+    Augment ->> Daemon: {op: retrieve, repo, prompt} over unix socket<br/>2s timeout, stdlib only
+    activate Daemon
+
+    %% ========== STAGE 2: SKIP RULE ==========
+    Note over Daemon: SKIP RULE (decision 31)<br/>patterns, then meta-questions, then usable query terms after<br/>stopword removal (min 2). Fires before any retrieval work.<br/>Skipped prompts still write a trace: "did nothing" and<br/>"never ran" must not look identical.
+
+    %% ========== STAGE 3: CANDIDATE GENERATION ==========
+    par Sparse (always)
+        Daemon ->> Index: FTS5 BM25, top 80
+        Note over Index: Columns: content, path, symbol, ident.<br/>`ident` holds the identifier-split form<br/>(RotateRefreshToken -> rotate refresh token).<br/>WITHOUT IT the query "refresh token" cannot match<br/>RotateRefreshToken at all -- the diagram's own example.<br/>bm25() cannot be used inside an aggregate, so the<br/>max-per-file rollup happens in Python.
+        Index -->> Daemon: bm25 candidates
+    and Dense (only when the model matches the index)
+        Daemon ->> Index: int8 KNN top 200, then float32 rescore
+        Note over Index: sqlite-vec, NOT Chroma: dense and sparse live in one<br/>database and update in one transaction, so they cannot skew.<br/>sqlite-vec has no ANN, so the int8 scan is linear and the<br/>float32 rescore restores precision on the survivors.<br/>SKIPPED if the loaded model differs from the one the index<br/>was built with -- a 768-dim index queried with a 1024-dim<br/>vector is a hard SQL error that fails the whole request.<br/>MEASURED: dense alone ranked BELOW plain BM25 (0.153 vs 0.197).
+        Index -->> Daemon: dense candidates
+    end
+
+    %% ========== STAGE 4: FUSION ==========
+    Daemon ->> Daemon: RRF fuse (k=60), cut to 50
+    Note over Daemon: The original "union two 100-lists, take top 100" removed<br/>nothing. The cut to 50 is real and halves every later stage.<br/>AST expansion is DISABLED (ast_depth = 0). Measured three<br/>times, most recently with real import graphs from all four<br/>language adapters: it is neutral-to-negative.<br/>Turning it off moved the pipeline from +11.3pp to +14.1pp<br/>over ripgrep. The graph is still built and still feeds the<br/>ranker as in/out-degree; only the expansion stopped.
+
+    %% ========== STAGE 5: RERANK ==========
+    Daemon ->> Ranker: 50 candidates x 22 features
+    activate Ranker
+    Note over Ranker: LightGBM lambdarank, NOT a 3B LoRA model.<br/>A 3B model would need 100 forward passes per prompt: minutes<br/>on CPU, and the whole hook budget is ~1-2s.<br/>Features: dense/sparse scores and ranks, RRF, matching chunks,<br/>AST degree, path-token overlap, symbol exact match, file size,<br/>is_test, is_generated, is_doc, is_config, is_script,<br/>git recency and churn (point-in-time, never leaking the label).<br/>Trained on REAL PROMPTS mined from agent session history --<br/>commit messages proved a poor proxy and scored +0.7pp.<br/>MEASURED: sub-10ms; hit@5 0.899 on held-out prompts.
+    Ranker -->> Daemon: reranked order
+    deactivate Ranker
+
+    %% ========== STAGE 6: GATE + FALLBACK ==========
+    Daemon ->> Daemon: confidence gate
+    Note over Daemon: Judges the SET, not the argmax: top score plus the margin<br/>between the last selected and first rejected candidate.<br/>The original softmax over 100 logits with max_prob > 0.85<br/>is unreachable, and it judged one file while five ship.<br/>Thresholds are calibrated on held-out data, not guessed.
+
+    alt HIGH confidence
+        Daemon ->> Daemon: take top N
+    else LOW confidence
+        Daemon ->> Rg: identifiers from the prompt
+        Note over Rg: Always ripgrep, never POSIX grep: rg honours .gitignore<br/>and skips binaries. Replaces the ranking wholesale --<br/>right for identifier prompts, useless for conceptual ones.<br/>This is the SAME function the benchmark uses as arm B0:<br/>what the pipeline falls back to and what it must beat<br/>should not be two implementations.
+        Rg -->> Daemon: ranked paths
+    end
+
+    Daemon ->> Index: write trace (stages, timings, gate, selection)
+    Daemon -->> Augment: {paths, tokens, gate, trace_id}
+    deactivate Daemon
+
+    %% ========== STAGE 7: RENDERING -- THE BINDING CONSTRAINT ==========
+    Note over Augment: THE BOTTLENECK IS HERE, NOT IN RANKING.<br/>The daemon's own assembled full-file context is DISCARDED;<br/>only the ranked paths are used.<br/>MEASURED BREAK-EVEN: ~2,095 tokens. Above that, an injection<br/>costs more than the discovery it saves, because the agent<br/>made only 1-2 discovery calls to begin with.<br/>Whole-file injection measured 1.86x the baseline token cost.<br/>Above ~40KB the harness spills hook output to a FILE and<br/>hands the model a pointer, which it then spends turns reading.
+
+    Augment ->> Augment: tiered render, 8000 char budget (~2k tokens)
+    Note over Augment: Small file -> full content, comments stripped (no Read needed).<br/>Large file -> imports plus class/function signatures only.<br/>A cap alone cannot work: assembly always admits the first<br/>file whole, so one large file defeats any budget. Degrading<br/>per file is what makes the budget bind.
+
+    alt daemon unavailable or repo not indexed
+        Augment ->> Augment: fzf fuzzy filenames + ripgrep definition sites
+        Note over Augment: The original path, kept as fallback. Fails open:<br/>any error exits 0 with no injection. A retrieval tool<br/>must never be able to break a session.
+    end
+
+    Augment -->> CC: <context-augmentation> with <file> blocks
+    deactivate Augment
+    CC ->> User: response, with the files already in context

@@ -1,0 +1,29 @@
+{
+  "branch": "pipeline-worker/tmp-41fc5481",
+  "targetBranch": "main",
+  "worktreePath": "/tmp/pipeline-worker-mOp9S2/worktree",
+  "ciFixAttempt": 0,
+  "conflictAttempt": 0,
+  "phase": "diff",
+  "changedFiles": [
+    ".claude/bash-allowlist",
+    "docs/SPEC.md",
+    "src/hybrid_retrieval/daemon/server.py",
+    "src/hybrid_retrieval/retrieve/pipeline.py",
+    "tests/test_m4.py"
+  ],
+  "untrackedFiles": [
+    ".pipeline-worker/",
+    "docs/current-pipeline.mmd"
+  ],
+  "startedAt": "2026-08-08T15:04:56.281Z",
+  "updatedAt": "2026-08-08T15:04:56.281Z",
+  "history": [
+    {
+      "at": "2026-08-08T15:04:56.281Z",
+      "phase": "diff",
+      "level": "info",
+      "message": "Created worktree at /tmp/pipeline-worker-mOp9S2/worktree (temp branch pipeline-worker/tmp-41fc5481)"
+    }
+  ]
+}
