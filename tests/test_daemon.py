@@ -125,7 +125,14 @@ def _run_shim(event: dict, socket_path: Path) -> subprocess.CompletedProcess:
     )
 
 
-def test_shim_injects_context(daemon: Path, repo: Path):
+def test_shim_injects_ranked_paths(daemon: Path, repo: Path):
+    """Paths, not file bodies (SPEC 10j).
+
+    This asserted `RotateRefreshToken` — the file's *contents* — while decision 29 stood. Measured
+    on a real repo that payload was ~19,600 tokens against a ~2,095 token break-even, and above
+    ~40KB the harness spills it to a file, so the shim now sends `assemble: false` and renders the
+    ranking. The negative half of this test is the point: contents must NOT come back.
+    """
     result = _run_shim(
         {"prompt": "rotate the refresh token", "cwd": str(repo), "session_id": "s1"}, daemon
     )
@@ -133,7 +140,10 @@ def test_shim_injects_context(daemon: Path, repo: Path):
     payload = json.loads(result.stdout)
     block = payload["hookSpecificOutput"]
     assert block["hookEventName"] == "UserPromptSubmit"
-    assert "RotateRefreshToken" in block["additionalContext"]
+    context = block["additionalContext"]
+    assert "JwtService.cs" in context
+    assert "RotateRefreshToken" not in context
+    assert len(context) < 2_000
 
 
 def test_shim_is_silent_when_the_daemon_is_absent(repo: Path, tmp_path: Path):

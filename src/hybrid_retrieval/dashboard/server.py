@@ -20,6 +20,14 @@ log = logging.getLogger(__name__)
 
 STATIC = Path(__file__).parent / "static"
 DEFAULT_PORT = 5111
+MIME = {
+    ".woff2": "font/woff2",
+    ".html": "text/html; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+    ".svg": "image/svg+xml",
+    ".txt": "text/plain; charset=utf-8",
+}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -54,6 +62,14 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError as exc:
             raise api.ApiError(f"invalid JSON body: {exc}") from exc
 
+    def _static(self, route: str) -> None:
+        """Serve files under `static/`. Resolved and re-checked so `..` cannot escape the dir."""
+        target = (STATIC / route[len("/static/") :]).resolve()
+        if not target.is_file() or STATIC.resolve() not in target.parents:
+            self._json({"error": "not found"}, 404)
+            return
+        self._send(200, target.read_bytes(), MIME.get(target.suffix, "application/octet-stream"))
+
     # -- routes ------------------------------------------------------------
 
     def do_GET(self) -> None:  # noqa: N802
@@ -77,6 +93,19 @@ class Handler(BaseHTTPRequestHandler):
             elif route == "/api/trace":
                 params = self._query()
                 self._json(api.one_trace(params.get("repo"), int(params.get("id", 0))))
+            elif route == "/api/sessions":
+                params = self._query()
+                self._json(
+                    api.sessions(
+                        params.get("repo"),
+                        limit=int(params.get("limit", 200)),
+                        refresh=params.get("refresh", "1") != "0",
+                        page=int(params.get("page", 1)),
+                        page_size=int(params.get("page_size", 50)),
+                    )
+                )
+            elif route.startswith("/static/"):
+                self._static(route)
             else:
                 self._json({"error": "not found"}, 404)
         except api.ApiError as exc:

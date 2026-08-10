@@ -1,0 +1,40 @@
+mindmap
+  root((hybrid-retrieval CLI))
+    doctor
+      cmd_doctor / report -- check local environment
+    scan
+      cmd_scan -- enumerate indexable files, no index written
+    index
+      cmd_index
+      --watch: stay resident, re-index on file changes, see watcher.py
+    embed
+      cmd_embed
+      --limit N
+      --reset: drop vectors to switch embedder model
+    train
+      cmd_train
+      --holdout N
+      --max-commits
+      --no-dense mines git history via gitlog.py, then train/train.py train_ranker
+    sessions
+      cmd_sessions
+      --top, --sources claude-code,pi,copilot-*
+    train-sessions
+      cmd_train_sessions
+      --target touched|edited, --holdout-fraction, --index, --dense
+    trace
+      cmd_trace
+      --last, --id, --quiet, --prune, --days
+      inspects trace.py rows: what the pipeline did on recent queries
+    serve
+      cmd_serve -- run the resident daemon, see daemon/server.py
+    stop
+      cmd_stop -- shut daemon down cleanly
+    dashboard
+      cmd_dashboard
+      --host 127.0.0.1 only, no auth, --port 5111
+    query
+      cmd_query
+      --repo, --local bypasses daemon, --dense, --show-context
+    status
+      cmd_status -- index statistics

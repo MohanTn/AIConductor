@@ -1,0 +1,30 @@
+flowchart TD
+  Registry["lang/__init__.py adapter_for(lang) / has_adapter(lang)"]
+  Base["lang/base.py LanguageAdapter (chunk, symbols, import_refs, resolve) + SymbolTable"]
+  TS["lang/treesitter.py get_parser/parse/chunk_tree -- grammar-driven chunking shared by all adapters"]
+
+  Registry --> CSharp["csharp.py CSharpAdapter"]
+  Registry --> TypeScript["typescript.py TypeScriptAdapter (also registered for 'javascript')"]
+  Registry --> Python["python_lang.py PythonAdapter"]
+  Registry --> Go["golang.py GoAdapter"]
+  Registry --> Fallback["fallback.py FallbackAdapter -- window-chunking, used when has_adapter() is false"]
+
+  Base -.implements.-> CSharp
+  Base -.implements.-> TypeScript
+  Base -.implements.-> Python
+  Base -.implements.-> Go
+  TS --> CSharp
+  TS --> TypeScript
+  TS --> Python
+  TS --> Go
+
+  CSharp --> CSGotcha["gotcha: block namespaces need explicit walk (probe_grammar.py first)"]
+  TypeScript --> TSGotcha["gotcha: export_statement wraps the real declaration node"]
+  Python --> PyGotcha["gotcha: decorated_definition wraps def/class when decorators are present"]
+
+  CSharp -.resolve via.-> UsingTarget["_using_target() -> namespace-declaring files (index/edges.py same-namespace edges)"]
+  TypeScript -.resolve via.-> Candidates["_candidates()/_join() -> relative import resolution"]
+  Python -.resolve via.-> ModuleFiles["_module_files()/_relative_base() -> dotted import resolution"]
+  Go -.resolve via.-> PkgFanout["module-qualified import -> package directory (fanout capped)"]
+
+  Rule["CLAUDE.md ground rule: pin grammar node types empirically via scripts/probe_grammar.py against a fixture before writing a chunker"] -.-> TS

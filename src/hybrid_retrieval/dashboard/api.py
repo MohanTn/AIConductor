@@ -14,8 +14,8 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+from .. import feedback, trace
 from .. import paths as app_paths
-from .. import trace
 from ..config import Config, apply_updates, overrides, save, to_dict
 from ..db import connect, dense_config, schema_version
 from ..rank import FEATURE_NAMES, Ranker
@@ -183,6 +183,76 @@ def one_trace(repo: str | None, trace_id: int) -> dict[str, Any]:
         return asdict(row)
     finally:
         conn.close()
+
+
+def sessions(
+    repo: str | None,
+    *,
+    limit: int = 200,
+    refresh: bool = True,
+    page: int = 1,
+    page_size: int = 50,
+) -> dict[str, Any]:
+    """Per-session view: each prompt, what was injected for it, and what the agent opened after.
+
+    Reconciliation runs on read by default. Mining the transcripts costs a second or so and a
+    session is still being appended to while someone is looking at it, so a stale view would be the
+    normal case rather than the exception. Pass ``refresh=False`` to read what is already stored.
+
+    ``page``/``page_size`` slice the session list only. Totals stay over every session in the
+    window, so paging through the list never moves the headline numbers.
+    """
+    root = _repo(repo)
+    conn = connect(root)
+    try:
+        stats = feedback.reconcile(root, conn, limit=limit) if refresh else {}
+        rows = feedback.by_session(conn, limit=limit)
+        totals = _totals(rows)
+        size = max(1, page_size)
+        pages = max(1, -(-len(rows) // size))
+        current = min(max(1, page), pages)
+        start = (current - 1) * size
+        return {
+            "repo": str(root),
+            "reconcile": stats,
+            "sessions": rows[start : start + size],
+            "totals": totals,
+            "page": current,
+            "page_size": size,
+            "pages": pages,
+            "total": len(rows),
+        }
+    finally:
+        conn.close()
+
+
+def _totals(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Roll the per-session numbers up. Rates are over observed prompts only.
+
+    An unobserved prompt contributes to neither numerator nor denominator: counting it as a miss
+    would mean a session where the agent opened nothing looked exactly like one where retrieval
+    failed, and those are opposite outcomes.
+    """
+    total = lambda key: sum(r[key] for r in rows)  # noqa: E731
+    observed = total("observed")
+    injected_observed = sum(
+        len(o["injected"]) for r in rows for o in r["outcomes"] if o["observed"]
+    )
+    used = total("used_files")
+    return {
+        "sessions": len(rows),
+        "prompts": total("prompts"),
+        "observed": observed,
+        "skipped": total("skipped"),
+        "injected_files": total("injected_files"),
+        "used_files": used,
+        "wasted_files": total("wasted_files"),
+        "extra_files": total("extra_files"),
+        "tokens": total("tokens"),
+        "hit_rate": (total("hits") / observed) if observed else 0.0,
+        "precision": (used / injected_observed) if injected_observed else 0.0,
+        "extra_per_prompt": (total("extra_files") / observed) if observed else 0.0,
+    }
 
 
 STAGE_ORDER = ("skip", "sparse", "embed", "dense", "fuse", "score", "gate", "fallback", "assemble")

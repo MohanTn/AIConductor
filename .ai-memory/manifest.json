@@ -1,0 +1,34 @@
+{
+  "routes": [
+    {
+      "keywords": ["daemon", "shim", "hook", "retrieve", "pipeline", "rerank", "gate", "fuse", "rrf", "skip", "assemble", "UserPromptSubmit"],
+      "file": "diagrams/refactor/pipeline-architecture.mmd",
+      "priority": 10
+    },
+    {
+      "keywords": ["dashboard", "api.py", "server.py", "/api/", "route", "endpoint", "probe", "config", "traces"],
+      "file": "diagrams/api/dashboard-routes.mmd",
+      "priority": 7
+    },
+    {
+      "keywords": ["adapter", "tree-sitter", "treesitter", "chunker", "grammar", "csharp", "typescript", "python_lang", "golang", "symbol table", "probe_grammar"],
+      "file": "diagrams/lang/adapters.mmd",
+      "priority": 9
+    },
+    {
+      "keywords": ["cli.py", "hybrid-retrieval", "subcommand", "argparse", "cmd_index", "cmd_train", "cmd_query", "cmd_dashboard"],
+      "file": "diagrams/cli/commands.mmd",
+      "priority": 6
+    },
+    {
+      "keywords": ["pytest", "test_", "fixtures", "conftest", "bench", "tier1", "tier2"],
+      "file": "diagrams/test/suite-shape.mmd",
+      "priority": 6
+    },
+    {
+      "keywords": ["bug", "debug", "regression", "stale daemon", "not working"],
+      "file": "diagrams/debug/playbook.mmd",
+      "priority": 9
+    }
+  ]
+}

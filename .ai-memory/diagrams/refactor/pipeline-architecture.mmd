@@ -1,0 +1,51 @@
+flowchart TD
+  Prompt["UserPromptSubmit event (stdin JSON)"] --> Shim["hook/shim.py main()"]
+  Shim -->|"unix socket, 3s timeout, fail open"| DaemonSock["daemon.sock"]
+  Shim -->|"daemon unreachable"| Autostart["autostart(): spawn 'hybrid-retrieval serve' detached"]
+  Shim -->|"response.ok"| Render["render(paths) -> <retrieved-context> path list only, no file contents"]
+
+  DaemonSock --> Dispatch["daemon/server.py Daemon.dispatch(op)"]
+  Dispatch -->|ping| Ping["health/version reply"]
+  Dispatch -->|retrieve| Retrieve["_retrieve(): resolve repo, _state(), backfill loop"]
+  Dispatch -->|shutdown| Shutdown["_shutdown_soon()"]
+
+  Retrieve --> PipelineRetrieve["retrieve/pipeline.py retrieve()"]
+
+  subgraph Stages["retrieve.pipeline stages (each degrades, never fails)"]
+    direction TB
+    Skip["skip.should_skip(prompt) -- gate out noise prompts"]
+    Gen["generate_candidates(): sparse + dense -> rrf_fuse"]
+    Sparse["sparse.sparse_candidates: BM25 + AST-expand"]
+    Dense["dense.dense_candidates: vector search (needs embedder + dense_ready)"]
+    Fuse["fusion.rrf_fuse"]
+    Rerank["rerank(): rank.features.extract -> Ranker.rerank (trained model, else fused order stands)"]
+    Gate["rank.gate.evaluate -> GateDecision (HIGH/LOW confidence)"]
+    Fallback["fallback.ripgrep_candidates (low confidence override)"]
+    Assemble["assemble.assemble -> ContextPack (skipped when assemble=False, paths-only)"]
+    Skip --> Gen --> Sparse & Dense
+    Sparse --> Fuse
+    Dense --> Fuse
+    Fuse --> Rerank --> Gate
+    Gate -->|low confidence| Fallback
+    Gate -->|high confidence| Assemble
+    Fallback --> Assemble
+  end
+
+  PipelineRetrieve --> Stages
+  Assemble --> TraceRow["trace.record() -> traces table"]
+  TraceRow --> Retrieve
+  Retrieve --> Dispatch
+
+  subgraph Index["index build (separate from query path)"]
+    Walker["index/walker.py discover()"] --> Indexer["index/indexer.py index_repo()"]
+    Indexer --> LangAdapters["lang/*.py adapter_for(lang).chunk/symbols/import_refs"]
+    Indexer --> Edges["index/edges.py rebuild_edges (import graph)"]
+    Indexer --> Backfill["embed/backfill.py embed_pending() (dense vectors, async loop in daemon)"]
+  end
+
+  Index -.->|feeds| Sparse
+  Backfill -.->|feeds| Dense
+
+  CLI["cli.py cmd_index / cmd_embed / cmd_train"] --> Index
+  CLI --> TrainRanker["train/train.py train_ranker (mines git history + sessions)"]
+  TrainRanker -.->|writes model| Rerank

@@ -1,0 +1,52 @@
+flowchart LR
+  subgraph Server["dashboard/server.py Handler"]
+    GET["do_GET"]
+    POST["do_POST"]
+    STATIC["_static (serves static/*, path-escape checked)"]
+  end
+
+  subgraph Routes["GET routes"]
+    R1["/ , /index.html -> static/index.html"]
+    R2["/api/repos"]
+    R3["/api/health"]
+    R4["/api/status?repo="]
+    R5["/api/config?repo="]
+    R6["/api/traces?repo=&limit="]
+    R7["/api/trace?repo=&id="]
+    R8["/api/sessions?repo=&limit=&page=&page_size=&refresh="]
+  end
+
+  subgraph RoutesPost["POST routes"]
+    P1["/api/probe {repo, prompt}"]
+    P2["/api/config {repo, updates, scope}"]
+  end
+
+  subgraph Api["dashboard/api.py"]
+    discover_repos
+    daemon_health
+    status["status / _ranker_summary"]
+    get_config
+    put_config
+    traces
+    one_trace
+    sessions["sessions / _totals"]
+    probe["probe -> _stage_view / _dense_note"]
+  end
+
+  GET --> R1 & R2 & R3 & R4 & R5 & R6 & R7 & R8
+  GET --> STATIC
+  POST --> P1 & P2
+
+  R2 --> discover_repos
+  R3 --> daemon_health
+  R4 --> status
+  R5 --> get_config
+  R6 --> traces
+  R7 --> one_trace
+  R8 --> sessions
+  P1 --> probe
+  P2 --> put_config
+
+  probe -.-> Daemon["daemon/client.py request() over unix socket"]
+  ApiError["api.ApiError -> JSON error + status code"] -.-> GET
+  ApiError -.-> POST
