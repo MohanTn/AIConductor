@@ -1,0 +1,25 @@
+{
+  "$comment": [
+    "Scoped to this repo on purpose. The daemon cold-indexes any repo it is asked about, and a",
+    "machine-wide hook would do that for every project you open, so this stays local until the",
+    "Sessions tab says the injection is earning its tokens here first.",
+    "shim.py is standard-library only, so plain python3 runs it; the daemon it talks to is the one",
+    "holding the model. Invoked through python3 rather than the file's executable bit because a",
+    "hook that cannot exec fails silently and looks identical to a hook that chose to skip.",
+    "The 5s timeout sits just above the shim's own 3s socket timeout, so the shim gives up first",
+    "and exits 0 rather than being killed mid-write."
+  ],
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/hook/shim.py\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,35 @@
+flowchart TD
+  Conftest["tests/conftest.py: git_repo, write -- shared fixtures build a real throwaway git repo"]
+
+  subgraph Unit["one test file per src module (mirrors src/hybrid_retrieval layout)"]
+    TConfig["test_config.py"]
+    TWalker["test_walker.py"]
+    TIndexer["test_indexer.py"]
+    TSchema["test_schema.py"]
+    TEmbed["test_embed.py"]
+    TRank["test_rank.py -- metrics, gitlog, features, gate"]
+    TRetrieval["test_retrieval.py -- sparse/dense/fusion/assemble/pipeline"]
+    TDaemon["test_daemon.py -- daemon socket protocol + hook shim (_run_shim)"]
+    TDashboard["test_dashboard.py -- api.py + server.py routes"]
+    TWatcher["test_watcher.py"]
+    TSessions["test_sessions.py + test_sessions_sources.py -- claude-code/pi/copilot miners"]
+    TM4["test_m4.py -- skip gate, ripgrep fallback, trace, feedback"]
+  end
+
+  subgraph LangTests["per-language adapter tests, each backed by a fixture file"]
+    TCSharp["test_csharp.py"] --> FCSharp["tests/fixtures/csharp/*.cs"]
+    TLangAdapters["test_lang_adapters.py -- TypeScript, Python, Go in one file"] --> FTS["tests/fixtures/typescript/authService.ts"]
+    TLangAdapters --> FPy["tests/fixtures/python/auth_service.py"]
+    TLangAdapters --> FGo["tests/fixtures/go/auth_service.go"]
+  end
+
+  subgraph CI["CI-weight integration test"]
+    TTier1["test_tier1_ci.py -- synthetic repo, mines history, asserts pipeline beats a bad ordering"]
+  end
+
+  Conftest -.-> Unit
+  Conftest -.-> LangTests
+  Conftest -.-> CI
+
+  Bench["bench/ -- NOT pytest: tier1_sessions.py + tier2_runner.py score real sessions, write docs/benchmarks/*.json"]
+  Note["Quality claims need bench evidence, not just green tests (CLAUDE.md ground rule)"] -.-> Bench

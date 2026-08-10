@@ -33,6 +33,10 @@ class TraceRow:
     decision: str
     latency_ms: float
     injected_tokens: int
+    # Written since the first version, read back only once feedback.py needed it to pair a trace
+    # with the session turn that followed. Defaulted and placed last of the required fields so
+    # existing positional construction keeps working.
+    session_id: str = ""
     stages: dict[str, Any] = field(default_factory=dict)
     selected: list[dict] = field(default_factory=list)
 
@@ -110,6 +114,7 @@ def _row(raw: sqlite3.Row) -> TraceRow:
         decision=raw["decision"] or "",
         latency_ms=raw["latency_ms"] or 0.0,
         injected_tokens=raw["injected_tokens"] or 0,
+        session_id=raw["session_id"] or "",
         stages=json.loads(raw["stages"] or "{}"),
         selected=json.loads(raw["selected"] or "[]"),
     )

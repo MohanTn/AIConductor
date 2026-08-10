@@ -80,6 +80,28 @@ def autostart() -> None:
         )
 
 
+HEADER = (
+    "Files ranked for this prompt by local hybrid retrieval (BM25 + vectors + import graph). "
+    "A ranked guess, not a constraint: open what looks useful and ignore the rest."
+)
+
+
+def render(paths: list[str]) -> str:
+    """A ranked path list, not the file contents (SPEC 10j).
+
+    Decision 29 specified full file contents and measurement reversed it. Assembling the top 5 of
+    this repo for one prompt measured 78,260 characters, about 19,600 tokens, against a ~2,095
+    token break-even; and hook output above ~40KB is spilled by the harness to a file whose pointer
+    the agent then spends turns reading, which is worse than injecting nothing at all. Paths cost
+    roughly 2% of that and still remove the search: the agent opens three named files instead of
+    grepping for them.
+    """
+    if not paths:
+        return ""
+    listing = "\n".join(f"{i:>2}. {path}" for i, path in enumerate(paths, start=1))
+    return f"<retrieved-context>\n{HEADER}\n{listing}\n</retrieved-context>"
+
+
 def emit(context: str) -> None:
     if not context:
         return
@@ -115,6 +137,9 @@ def main() -> int:
         "repo": str(repo),
         "prompt": prompt,
         "session_id": event.get("session_id"),
+        # The daemon would otherwise read all five selected files and build a string this hook
+        # discards. It costs the daemon work and buys nothing, since `render` uses only the paths.
+        "assemble": False,
     }
 
     response = ask_daemon(payload)
@@ -122,7 +147,7 @@ def main() -> int:
         autostart()
         return 0
     if response.get("ok"):
-        emit(response.get("context") or "")
+        emit(render(response.get("paths") or []))
     return 0
 
 
