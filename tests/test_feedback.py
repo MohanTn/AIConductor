@@ -313,7 +313,13 @@ def test_sessions_endpoint_pages_without_moving_totals(git_repo: Path):
     handle = connect(git_repo)
     try:
         for i in range(5):
-            _trace(handle, prompt=f"prompt {i}", paths=("a.py",), session_id=f"s{i}", ts=1_000.0 + i)
+            _trace(
+                handle,
+                prompt=f"prompt {i}",
+                paths=("a.py",),
+                session_id=f"s{i}",
+                ts=1_000.0 + i,
+            )
     finally:
         handle.close()
 
