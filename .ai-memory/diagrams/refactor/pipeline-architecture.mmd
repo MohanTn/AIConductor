@@ -1,51 +1,60 @@
 flowchart TD
-  Prompt["UserPromptSubmit event (stdin JSON)"] --> Shim["hook/shim.py main()"]
-  Shim -->|"unix socket, 3s timeout, fail open"| DaemonSock["daemon.sock"]
-  Shim -->|"daemon unreachable"| Autostart["autostart(): spawn 'hybrid-retrieval serve' detached"]
-  Shim -->|"response.ok"| Render["render(paths) -> <retrieved-context> path list only, no file contents"]
+  Prompt["You type a prompt in Claude Code"] --> Shim["Hook runs first, before the model ever sees it -- hook/shim.py main()"]
+  Shim --> ReadIn["Reads the prompt + current folder from stdin JSON, finds the repo root (nearest .git)"]
+  ReadIn -->|"no repo found / empty prompt"| Exit0["Exit quietly, nothing injected (fail open, always)"]
+  ReadIn --> Ask["Sends {repo, prompt} over a local unix socket to the daemon, waits up to 3s -- ask_daemon()"]
 
-  DaemonSock --> Dispatch["daemon/server.py Daemon.dispatch(op)"]
-  Dispatch -->|ping| Ping["health/version reply"]
-  Dispatch -->|retrieve| Retrieve["_retrieve(): resolve repo, _state(), backfill loop"]
-  Dispatch -->|shutdown| Shutdown["_shutdown_soon()"]
+  Ask -->|"daemon not running"| Spawn["Starts 'hybrid-retrieval serve' detached in the background -- autostart()"]
+  Spawn --> Cold0["THIS prompt still gets nothing -- the daemon is cold-starting for the next one"]
+  Cold0 --> Exit0
 
-  Retrieve --> PipelineRetrieve["retrieve/pipeline.py retrieve()"]
+  Ask -->|"daemon replies"| Dispatch["One resident daemon process, shared by every repo and every prompt -- daemon/server.py dispatch()"]
 
-  subgraph Stages["retrieve.pipeline stages (each degrades, never fails)"]
+  subgraph First["First prompt ever for this repo, this daemon run -- Daemon._state()"]
     direction TB
-    Skip["skip.should_skip(prompt) -- gate out noise prompts"]
-    Gen["generate_candidates(): sparse + dense -> rrf_fuse"]
-    Sparse["sparse.sparse_candidates: BM25 + AST-expand"]
-    Dense["dense.dense_candidates: vector search (needs embedder + dense_ready)"]
-    Fuse["fusion.rrf_fuse"]
-    Rerank["rerank(): rank.features.extract -> Ranker.rerank (trained model, else fused order stands)"]
-    Gate["rank.gate.evaluate -> GateDecision (HIGH/LOW confidence)"]
-    Fallback["fallback.ripgrep_candidates (low confidence override)"]
-    Assemble["assemble.assemble -> ContextPack (skipped when assemble=False, paths-only)"]
-    Skip --> Gen --> Sparse & Dense
-    Sparse --> Fuse
-    Dense --> Fuse
-    Fuse --> Rerank --> Gate
-    Gate -->|low confidence| Fallback
-    Gate -->|high confidence| Assemble
-    Fallback --> Assemble
+    Open{"Is this repo already 'open' in the daemon?"}
+    Cold["No: build the search index if missing, start a file-watcher"]
+    LoadModel["Read this repo's trained model file (ranker.txt) off disk and build a LightGBM Booster object IN RAM -- rank/scorer.py Ranker.load(), a CPU deserialize step, no GPU involved"]
+    Cache["Keep that Booster alive in memory for as long as the daemon keeps running, one per repo -- RepoState.ranker"]
+    Open -->|"first time"| Cold --> LoadModel --> Cache
+    Open -->|"already open"| Cache
   end
 
-  PipelineRetrieve --> Stages
-  Assemble --> TraceRow["trace.record() -> traces table"]
-  TraceRow --> Retrieve
-  Retrieve --> Dispatch
+  Dispatch --> Open
 
-  subgraph Index["index build (separate from query path)"]
-    Walker["index/walker.py discover()"] --> Indexer["index/indexer.py index_repo()"]
-    Indexer --> LangAdapters["lang/*.py adapter_for(lang).chunk/symbols/import_refs"]
-    Indexer --> Edges["index/edges.py rebuild_edges (import graph)"]
-    Indexer --> Backfill["embed/backfill.py embed_pending() (dense vectors, async loop in daemon)"]
+  subgraph EveryPrompt["Every prompt after that reuses the same in-RAM model, no reload -- retrieve/pipeline.py retrieve()"]
+    direction TB
+    Search["Shortlist candidate files: keyword search (BM25) plus optional meaning search (embeddings)"]
+    Merge["Merge both shortlists into one ranked list -- rrf_fuse"]
+    Features["Turn each candidate into a row of numbers: recency, how well it matches, etc. -- rank.features.extract"]
+    Score["Feed that numbers table into the already-loaded LightGBM model -- booster.predict() on the CPU, pure arithmetic over the pre-built tree ensemble, a few milliseconds"]
+    Sort["Re-sort candidates by the model's score"]
+    Gate{"Confidence check: is the top score/margin trustworthy? -- rank.gate.evaluate"}
+    Fallback["Not confident: drop the model's order, fall back to a plain text search instead -- ripgrep_candidates"]
+    Pick["Keep the top N file paths only -- files are NOT read for this kind of call"]
+    Search --> Merge --> Features --> Score --> Sort --> Gate
+    Gate -->|"low confidence"| Fallback --> Pick
+    Gate -->|"high confidence"| Pick
   end
 
-  Index -.->|feeds| Sparse
-  Backfill -.->|feeds| Dense
+  Cache --> Search
+  Pick --> Reply["Send {ok:true, paths:[...]} back over the same socket"]
 
-  CLI["cli.py cmd_index / cmd_embed / cmd_train"] --> Index
-  CLI --> TrainRanker["train/train.py train_ranker (mines git history + sessions)"]
-  TrainRanker -.->|writes model| Rerank
+  Reply --> Render["Hook turns the paths into a short '<retrieved-context>' text block -- render()"]
+  Render --> Emit["Hook prints it as hookSpecificOutput JSON on stdout -- emit()"]
+  Emit --> Inject["Claude Code injects that text as extra context, right before the model reads your prompt"]
+
+  Note1["A second, separate model also lives in RAM: the embedder (meaning search) loads ONCE at daemon startup for ALL repos -- unlike the ranker, which loads per repo on that repo's first prompt -- daemon/server.py _load_embedder()"]
+  Cache -.-> Note1
+
+  subgraph IndexBuild["Index build -- a separate path that feeds the search step above, not part of answering one prompt"]
+    direction TB
+    Walk["index/walker.py discover()"] --> IndexRepo["index/indexer.py index_repo()"]
+    IndexRepo --> Adapters["lang/*.py per-language chunkers"]
+    IndexRepo --> EdgesBuild["index/edges.py import graph"]
+    IndexRepo --> BackfillEmbed["embed/backfill.py embed_pending() -- dense vectors, filled in later by a background loop, off the request path"]
+  end
+  IndexBuild -.->|"feeds"| Search
+
+  classDef warn fill:#fff3cd,stroke:#b58900
+  class Exit0,Cold0 warn

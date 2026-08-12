@@ -1,0 +1,222 @@
+{
+  "branch": "feature/dashboard-hook-integration",
+  "targetBranch": "main",
+  "worktreePath": "/tmp/pipeline-worker-2qm4uv/worktree",
+  "ciFixAttempt": 1,
+  "conflictAttempt": 0,
+  "phase": "done",
+  "changedFiles": [
+    ".ai-memory/diagrams/api/dashboard-routes.mmd",
+    ".ai-memory/diagrams/cli/commands.mmd",
+    ".ai-memory/diagrams/debug/playbook.mmd",
+    ".ai-memory/diagrams/lang/adapters.mmd",
+    ".ai-memory/diagrams/refactor/pipeline-architecture.mmd",
+    ".ai-memory/diagrams/test/suite-shape.mmd",
+    ".ai-memory/manifest.json",
+    ".ai-memory/updates/.gitkeep",
+    ".claude/settings.json",
+    ".pipeline-worker/run.lock",
+    "hook/shim.py",
+    "src/hybrid_retrieval/dashboard/api.py",
+    "src/hybrid_retrieval/dashboard/server.py",
+    "src/hybrid_retrieval/dashboard/static/fonts/PatrickHand-OFL.txt",
+    "src/hybrid_retrieval/dashboard/static/fonts/PatrickHand-Regular.woff2",
+    "src/hybrid_retrieval/dashboard/static/index.html",
+    "src/hybrid_retrieval/feedback.py",
+    "src/hybrid_retrieval/trace.py",
+    "tests/test_daemon.py",
+    "tests/test_feedback.py",
+    "uv.lock"
+  ],
+  "untrackedFiles": [],
+  "startedAt": "2026-08-10T19:41:08.785Z",
+  "updatedAt": "2026-08-10T19:43:47.589Z",
+  "history": [
+    {
+      "at": "2026-08-10T19:41:08.785Z",
+      "phase": "diff",
+      "level": "info",
+      "message": "Created worktree at /tmp/pipeline-worker-2qm4uv/worktree (temp branch pipeline-worker/tmp-c7afca49)"
+    },
+    {
+      "at": "2026-08-10T19:41:10.213Z",
+      "phase": "apply",
+      "level": "info",
+      "message": "Applied the captured diff into /tmp/pipeline-worker-2qm4uv/worktree"
+    },
+    {
+      "at": "2026-08-10T19:41:18.728Z",
+      "phase": "checks",
+      "level": "info",
+      "message": "Checks passed (test)"
+    },
+    {
+      "at": "2026-08-10T19:41:59.464Z",
+      "phase": "intent",
+      "level": "info",
+      "message": "Captured intent; renamed to feature branch feature/dashboard-hook-integration",
+      "tokens": 107317
+    },
+    {
+      "at": "2026-08-10T19:41:59.482Z",
+      "phase": "commit",
+      "level": "info",
+      "message": "Committed \"add dashboard UI and UserPromptSubmit hook integration\""
+    },
+    {
+      "at": "2026-08-10T19:42:03.278Z",
+      "phase": "mr",
+      "level": "info",
+      "message": "Opened MR/PR https://github.com/MohanTn/hybrid-retrieval-pipeline/pull/36"
+    },
+    {
+      "at": "2026-08-10T19:42:03.281Z",
+      "phase": "watch",
+      "level": "info",
+      "message": "Started watching pipeline"
+    },
+    {
+      "at": "2026-08-10T19:42:37.183Z",
+      "phase": "watch",
+      "level": "info",
+      "message": "Pipeline 31425385352: failed — https://github.com/MohanTn/hybrid-retrieval-pipeline/actions/runs/31425385352"
+    },
+    {
+      "at": "2026-08-10T19:42:37.184Z",
+      "phase": "watch",
+      "level": "info",
+      "message": "Pipeline failed; attempt 1/5 — https://github.com/MohanTn/hybrid-retrieval-pipeline/actions/runs/31425385352"
+    },
+    {
+      "at": "2026-08-10T19:43:03.421Z",
+      "phase": "watch",
+      "level": "info",
+      "message": "Agent turn (fix CI failure)",
+      "tokens": 106647
+    },
+    {
+      "at": "2026-08-10T19:43:47.589Z",
+      "phase": "watch",
+      "level": "info",
+      "message": "Pipeline 31425483498: success — https://github.com/MohanTn/hybrid-retrieval-pipeline/actions/runs/31425483498"
+    },
+    {
+      "at": "2026-08-10T19:43:47.589Z",
+      "phase": "done",
+      "level": "info",
+      "message": "Pipeline succeeded"
+    }
+  ],
+  "checks": [
+    {
+      "name": "test",
+      "ok": true,
+      "durationMs": 8513,
+      "stdout": "",
+      "stderr": ""
+    }
+  ],
+  "intent": {
+    "intent": "Add dashboard UI and UserPromptSubmit hook integration to enable in-process retrieval injection and visual pipeline monitoring.",
+    "summary": "Introduces a web dashboard for monitoring the retrieval pipeline and traces, a lightweight UserPromptSubmit hook shim to inject ranked file paths into Claude Code prompts, and feedback/trace modules to track retrieval quality by pairing injected files against what the agent actually opened. All new components are testable in isolation and thoroughly covered by added test cases.",
+    "changeType": "feature",
+    "branchSlug": "dashboard-hook-integration",
+    "commitMessage": "add dashboard UI and UserPromptSubmit hook integration",
+    "fileChanges": [
+      {
+        "file": ".ai-memory/diagrams/api/dashboard-routes.mmd",
+        "summary": "Added Mermaid diagram documenting dashboard HTTP routes and API layer mapping."
+      },
+      {
+        "file": ".ai-memory/diagrams/cli/commands.mmd",
+        "summary": "Added Mermaid mindmap showing all CLI subcommands and their options."
+      },
+      {
+        "file": ".ai-memory/diagrams/debug/playbook.mmd",
+        "summary": "Added template for recording debugging sessions and regressions."
+      },
+      {
+        "file": ".ai-memory/diagrams/lang/adapters.mmd",
+        "summary": "Added diagram of language adapter architecture and gotchas."
+      },
+      {
+        "file": ".ai-memory/diagrams/refactor/pipeline-architecture.mmd",
+        "summary": "Added architecture diagram showing daemon dispatch, retrieval stages, and index build."
+      },
+      {
+        "file": ".ai-memory/diagrams/test/suite-shape.mmd",
+        "summary": "Added diagram of test suite layout and fixture sharing."
+      },
+      {
+        "file": ".ai-memory/manifest.json",
+        "summary": "Added retrieval manifest with keyword-to-diagram routing for memory augmentation."
+      },
+      {
+        "file": ".claude/settings.json",
+        "summary": "Added project-scoped Claude Code settings with retrieval config and exclusions."
+      },
+      {
+        "file": "hook/shim.py",
+        "summary": "Added lightweight UserPromptSubmit hook: connects to daemon over unix socket, injects ranked file paths only (not contents), and fails open."
+      },
+      {
+        "file": "src/hybrid_retrieval/dashboard/api.py",
+        "summary": "Added data layer for dashboard: endpoints for status, traces, sessions, config, and live pipeline probe with stage-by-stage breakdown."
+      },
+      {
+        "file": "src/hybrid_retrieval/dashboard/server.py",
+        "summary": "Added HTTP server: routes GET/POST to api.py handlers, serves static files with path-escape validation."
+      },
+      {
+        "file": "src/hybrid_retrieval/dashboard/static/index.html",
+        "summary": "Added single-page dashboard UI with hand-drawn aesthetic: views for vector DB stats, sessions, traces, config editor, and pipeline probe."
+      },
+      {
+        "file": "src/hybrid_retrieval/dashboard/static/fonts/PatrickHand-Regular.woff2",
+        "summary": "Added handwriting font for dashboard aesthetic (vendored, not generated)."
+      },
+      {
+        "file": "src/hybrid_retrieval/dashboard/static/fonts/PatrickHand-OFL.txt",
+        "summary": "Added OFL license for PatrickHand font."
+      },
+      {
+        "file": "src/hybrid_retrieval/feedback.py",
+        "summary": "Added implicit feedback tracking: reconciles traces against session history to compute used/wasted/extra files for retrieval quality metrics."
+      },
+      {
+        "file": "src/hybrid_retrieval/trace.py",
+        "summary": "Added per-query trace recording and feedback schema: stores what each stage produced and what the gate decided."
+      },
+      {
+        "file": "tests/test_daemon.py",
+        "summary": "Added daemon protocol tests: ping, cold-start indexing, shim injection, failure modes, socket locking, and stdlib-only verification."
+      },
+      {
+        "file": "tests/test_feedback.py",
+        "summary": "Added feedback logic tests: trace-session matching, set arithmetic on injected/used/wasted/extra, grouping, and dashboard endpoint pagination."
+      },
+      {
+        "file": "uv.lock",
+        "summary": "Updated lock file: added numpy as a core dependency and fixed CUDA platform markers for consistency."
+      }
+    ],
+    "risk": "medium",
+    "riskReason": "Adds new database schema (feedback table), HTTP endpoints, and hook infrastructure; all well-isolated from core retrieval logic but requires database migration and careful socket/server lifecycle testing.",
+    "testScenarios": [
+      "Hook shim connects to daemon over unix socket and injects ranked file paths (not full contents) under 2KB",
+      "Hook shim fails open (returns exit 0, no output) when daemon is unreachable, input is empty, or repo is invalid",
+      "Hook shim uses only Python standard library to minimize import latency on every prompt",
+      "Dashboard loads and displays vector DB stats, file count by language, embedder model, and reranker metrics",
+      "Sessions endpoint reconciles traces against real session history and correctly computes precision, hit rate, and extra files",
+      "Feedback matching pairs traces with session turns on session_id+prompt (exact) or prompt+time window (fallback)",
+      "Paging the sessions list slices only the session rows; totals remain constant across pages",
+      "Pipeline probe endpoint runs a real retrieve request and returns stage-by-stage timing and decision breakdown",
+      "Config endpoint reads and writes settings to repo or global scope without corrupting existing values",
+      "Trace recording never raises (uses try/except) even if database is corrupted or disk full"
+    ]
+  },
+  "totalTokens": 213964,
+  "mrIid": 36,
+  "mrUrl": "https://github.com/MohanTn/hybrid-retrieval-pipeline/pull/36",
+  "pipelineId": 31425483498
+}

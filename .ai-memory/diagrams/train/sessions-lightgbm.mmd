@@ -1,0 +1,83 @@
+flowchart TD
+  CLI["cli.py cmd_train_sessions (line 227) -- hybrid-retrieval train-sessions"]
+
+  subgraph Mine["1. mine harness history -- sessions/"]
+    direction TB
+    ClaudeCode["claude_code.mine: ~/.claude/projects/**/*.jsonl"]
+    Pi["pi.mine: ~/.pi/agent/sessions/**/*.jsonl"]
+    CopilotCli["copilot_cli.mine: ~/.copilot/session-store.db (SQLite)"]
+    CopilotChat["copilot_chat.mine: VS Code chatSessions/*.json (UNVERIFIED)"]
+    Filters["base.is_typed_prompt: >=25 chars, drop /slash, <system-reminder>, 'ok/yes/continue'"]
+    MakeEx["base.make_example: cwd -> repo root, relativise paths, read minus edited"]
+    ClaudeCode & Pi & CopilotCli & CopilotChat --> Filters --> MakeEx
+  end
+
+  CLI --> Mine
+  MakeEx --> SessionExample["SessionExample(prompt, repo, read_paths, edited_paths, timestamp, source)"]
+  SessionExample --> Group["sessions.group_by_repo -> top --max-repos repos by example count"]
+  Group -->|"--index"| IndexRepo["index.index_repo(repo): BM25 + AST + import graph must exist first"]
+
+  Group --> Label["train/dataset.from_session(target='touched'|'edited') -> LabelledQuery(query, gold, as_of)"]
+  Label --> Sources["train.SessionSource(repo_root, queries) per repo"]
+  Sources --> TFS["train/train.py train_from_sessions (line 200)"]
+
+  subgraph Build["2. per repo: build labelled examples -- train/dataset.build_examples"]
+    direction TB
+    Scope["scope gold to indexed files (SELECT path FROM files); drop queries with empty gold"]
+    GenCand["retrieve.pipeline.generate_candidates(prompt) -- sparse BM25 + dense, rrf_fuse"]
+    DropEmpty["no candidates -> dropped_no_candidates"]
+    DropUnreach["gold never surfaced -> dropped_no_positive (this is the RETRIEVAL CEILING)"]
+    Feat["rank.features.extract -> matrix (N x 22 float32), FEATURE_NAMES order"]
+    PIT["point-in-time: as_of = prompt timestamp; git recency/churn computed strictly BEFORE it"]
+    Labels["labels = 1.0 if candidate.path in gold else 0.0"]
+    Scope --> GenCand --> DropEmpty
+    GenCand --> DropUnreach
+    GenCand --> Feat --> PIT --> Labels
+  end
+
+  TFS --> Build
+  Labels --> Pooled["pooled: list[Example] across ALL repos (features are repo-agnostic, so pooling buys data)"]
+  Pooled -->|"< 20 examples"| Fail["ValueError: not enough usable examples"]
+  Pooled --> Split["dataset.split_by_time: sort by as_of, oldest 80% train, newest 20% holdout -- NEVER shuffle"]
+
+  subgraph Fit["3. train/train.py _fit (line 121) -- CPU only, no GPU flag, LightGBM default device"]
+    direction TB
+    Stack["np.vstack matrices, np.concatenate labels, groups = [len(e.candidates) per query]"]
+    DS["lgb.Dataset(matrix, label, group=groups, feature_name=FEATURE_NAMES)"]
+    Params["lgb.train: objective=lambdarank, metric=ndcg@5, lr=0.05, num_leaves=15,\nmin_data_in_leaf=20, feature/bagging_fraction=0.9, truncation=20, 200 rounds"]
+    Why["one group per query: only WITHIN-query order is learned, absolute scores are meaningless"]
+    Stack --> DS --> Params --> Why
+  end
+
+  Split --> Fit
+  Params --> Booster["lgb.Booster (seconds to minutes on CPU, no accelerator needed)"]
+
+  subgraph Eval["4. score on the holdout -- eval.metrics.MetricAccumulator"]
+    direction TB
+    Baseline["baseline = fused RRF order (_fused_order)"]
+    Trained["trained = Ranker.rerank order"]
+    Delta["recall@1/@5/@10, hit@5, mrr, ndcg@10 -- delta is the only claim you may make"]
+    Baseline --> Delta
+    Trained --> Delta
+  end
+
+  Booster --> Eval
+
+  subgraph Gate["5. calibrate the confidence gate -- rank/gate.py"]
+    direction TB
+    Signals["gate_signals(ordered, top_n) -> (top_score, margin between last kept and first dropped)"]
+    Samples["samples = (top_score, margin, was_correct) over every holdout query"]
+    Calib["calibrate(samples, target_precision=0.85) -> GateThresholds"]
+    Signals --> Samples --> Calib
+  end
+
+  Booster --> Gate
+
+  Calib --> Artefact["RankerArtefact(trained_on, n_queries, gate, metrics)"]
+  Delta --> Artefact
+  Artefact --> Save["rank.scorer.model_paths(out_root) -> model.txt + meta.json"]
+  Save --> Out["out_root = paths.config_dir() for session training (ONE global model, not per repo)"]
+  Out -.->|"loaded at query time"| Rerank["retrieve.pipeline rerank() + gate.evaluate"]
+
+  classDef warn fill:#fff3cd,stroke:#b58900
+  class DropUnreach,Fail,CopilotChat,PIT warn

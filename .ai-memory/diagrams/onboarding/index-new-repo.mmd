@@ -1,0 +1,74 @@
+flowchart TD
+  Start["New repo, nothing set up yet -- goal: prompts arrive with the right files already attached"]
+
+  subgraph Once["Step 1 -- one-time, per repo (minutes)"]
+    direction TB
+    Doctor["uv run hybrid-retrieval doctor -- checks python, tree-sitter grammars, sqlite FTS5, sqlite-vec, whether the dense extra is installed"]
+    Scan["uv run hybrid-retrieval scan /path/repo -- dry run: lists what WOULD be indexed (index/walker.py discover), respects .gitignore. Use it to catch a repo that is 90% vendored files before paying for an index"]
+    Index["uv run hybrid-retrieval index /path/repo -- the only mandatory step. Chunks every file with its language adapter (lang/*.py), writes FTS5 rows + the import graph (index/edges.py) into REPO/.retrieval/index.db. Seconds, CPU only"]
+    Gitignore["Add .retrieval/ to .gitignore -- scripts/add_gitignore.py does it. The index lives inside the repo (decision 11), it is not meant to be committed"]
+    Doctor --> Scan --> Index --> Gitignore
+  end
+
+  Start --> Doctor
+
+  subgraph Optional["Step 2 -- optional quality layers, skip both and BM25 alone still works"]
+    direction TB
+    Embed["uv run hybrid-retrieval embed /path/repo -- dense vectors for meaning-match ('retry backoff' finds a file that never says 'retry'). Slow, GPU-bound, needs --extra dense. The daemon also backfills these in the background (embed/backfill.py)"]
+    TrainGit["uv run hybrid-retrieval train /path/repo -- mines git history (gitlog.py): commit message = the prompt, files touched = the right answer. Trains a LightGBM ranker to REPO/.retrieval/ranker.txt. Needs real history, a fresh repo has nothing to learn from"]
+    TrainSess["uv run hybrid-retrieval train-sessions -- same idea from agent transcripts instead of commits (--target touched|edited). Better signal than git when you have session history"]
+    Embed --> TrainGit --> TrainSess
+  end
+
+  Gitignore --> Embed
+  Gitignore -->|"skip the extras"| Serve
+
+  subgraph Wire["Step 3 -- wire it into Claude Code"]
+    direction TB
+    Serve["uv run hybrid-retrieval serve -- one resident daemon serving ALL repos. The hook autostarts it, so running it by hand is only for watching logs"]
+    Hook["Add the UserPromptSubmit hook to .claude/settings.json -- a hooks entry of type command running: python3 /ABS/PATH/hook/shim.py"]
+    Py3["Always invoke via python3, never the executable bit -- a hook that cannot exec fails silently and looks identical to a hook that chose to skip"]
+    Serve --> Hook --> Py3
+  end
+
+  TrainSess --> Serve
+
+  subgraph Live["Step 4 -- what happens on every prompt after that (see refactor/pipeline-architecture.mmd for the internals)"]
+    direction TB
+    Skip{"retrieve/skip.py should_skip -- prompt under 8 chars, under 2 usable terms, or matches a skip pattern?"}
+    Nothing["Inject nothing. Most cheap prompts should land here; injecting on 'yes' is pure token waste"]
+    Pipe["retrieve/pipeline.py retrieve(): BM25 + dense -> RRF fuse -> LightGBM rerank -> confidence gate -> top_n (default 5)"]
+    Inject["Hook renders <retrieved-context> and Claude Code prepends it to your prompt"]
+    Skip -->|"yes"| Nothing
+    Skip -->|"no"| Pipe --> Inject
+  end
+
+  Py3 --> Skip
+
+  subgraph Verify["Step 5 -- prove it is actually working, do not assume"]
+    direction TB
+    Status["hybrid-retrieval status -- file/chunk counts, embedder, ranker metrics. Zero files means the walker excluded everything"]
+    Query["hybrid-retrieval query --repo /path/repo 'add jitter to retry backoff' --show-context -- the same pipeline, printed. --local bypasses the daemon entirely, which is how you tell a ranking bug from a stale-daemon bug"]
+    Trace["hybrid-retrieval trace --last -- every real hook request writes a row, INCLUDING skipped ones. If the hook is live but silent, the row tells you whether it skipped or gated"]
+    Dash["hybrid-retrieval dashboard -- the Pipeline tab runs your prompt through the daemon stage by stage. localhost, no auth"]
+    Status --> Query --> Trace --> Dash
+  end
+
+  Inject --> Status
+
+  subgraph Fresh["Keeping the index fresh"]
+    direction TB
+    Watch["The daemon starts a file-watcher on a repo's first prompt, so edits re-index themselves (index/watcher.py, 1s debounce)"]
+    Manual["Re-run index after a big rebase or a branch switch that the watcher was not running for"]
+    Stale["Changed code the daemon imports? hybrid-retrieval stop FIRST. A resident process holds old modules, and this repo's history is full of 'the fix did not work' that was really a stale daemon"]
+  end
+
+  Dash --> Watch --> Manual --> Stale
+
+  Budget["Payload size is the binding constraint, not ranking. Break-even is ~2,095 tokens (bench/breakeven.py). Above ~40KB the harness spills hook output to a file. top_n and max_tokens in .retrieval/config.toml are the dials -- max_tokens is null/uncapped by default. Adding tokens is what loses, not bad ranking"]
+  Inject -.-> Budget
+
+  classDef warn fill:#fff3cd,stroke:#b58900
+  class Stale,Py3,Budget warn
+  classDef must fill:#d4edda,stroke:#28a745
+  class Index,Hook must

@@ -6,6 +6,16 @@
       "priority": 10
     },
     {
+      "keywords": ["train", "training", "lightgbm", "lambdarank", "sessions", "harness", "transcript", "labels", "holdout", "calibrate", "reranker", "train-sessions", "features", "ceiling"],
+      "file": "diagrams/train/sessions-lightgbm.mmd",
+      "priority": 10
+    },
+    {
+      "keywords": ["onboard", "new repo", "another repo", "getting started", "quickstart", "set up", "setup", "install the hook", "settings.json", "first run", ".retrieval", "reindex", "re-index", "index a", "index the repo", "index my"],
+      "file": "diagrams/onboarding/index-new-repo.mmd",
+      "priority": 8
+    },
+    {
       "keywords": ["dashboard", "api.py", "server.py", "/api/", "route", "endpoint", "probe", "config", "traces"],
       "file": "diagrams/api/dashboard-routes.mmd",
       "priority": 7
