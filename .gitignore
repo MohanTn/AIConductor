@@ -19,3 +19,4 @@ build/
 # generated
 .claude/repo-map.md
 docs/benchmarks/*/raw/
+.pipeline-worker/**

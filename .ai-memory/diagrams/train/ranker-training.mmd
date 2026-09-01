@@ -1,0 +1,57 @@
+flowchart TD
+  CLI["cli.py:137 cmd_train / cli.py:227 cmd_train_sessions — entry points for `hybrid-retrieval train` and `train-sessions`"]
+
+  CLI -->|1a. git-mined queries| Commits["train/dataset.py:169 eligible_commits() — calls History.eligible (gitlog.py:65, max_files=15) which drops bulk/terse commits and keeps only files present in the sqlite files table. in: full commit log -> out: e.g. 4,200 commits -> 1,150 eligible"]
+  CLI -->|1b. session-mined queries| Sessions["sessions/__init__.py:52 mine() — pulls real agent transcripts from every enabled source (claude_code, copilot_cli, copilot_chat, pi), oldest first, skipping a source that errors rather than failing the batch. in: ~/.claude/projects transcripts -> out: list of SessionExample(prompt, touched, edited_paths, timestamp)"]
+
+  Commits -->|2a| FromCommit["train/dataset.py:47 from_commit() — commit.subject is the query text, commit.files is the gold/positive set, as_of = commit.timestamp"]
+  Sessions -->|2b| FromSession["train/dataset.py:56 from_session() — example.prompt is the query, gold = edited_paths (strong) or touched (edited+read)"]
+
+  FromCommit --> Split
+  FromSession --> Split
+
+  Split["train/dataset.py:156 split_by_time(items, holdout) — sorts oldest to newest, NEVER shuffles (a random split would leak future commits into training). Commit path: train.py:37 DEFAULT_HOLDOUT=200 newest commits. Session path: train.py:205 holdout_fraction=0.2, i.e. the newest 20% of pooled examples — this is the '80/20 split' in this codebase"]
+
+  Split -->|3. oldest ~80%| TrainQ["train_commits / train queries"]
+  Split -->|3. newest ~20%, held out| HoldQ["holdout_commits / holdout queries"]
+
+  TrainQ --> Build1["train/dataset.py:103 build_examples() — one call per query"]
+  HoldQ --> Build2["build_examples() — same function, holdout set, no gradient use"]
+
+  Build1 -->|4. run retrieval| Candidates["retrieve/pipeline.py generate_candidates() — the real sparse+dense pipeline. Sets the retrieval ceiling: a gold file retrieval never surfaces can never be learned (dataset.py:11-14)"]
+  Build2 --> Candidates
+
+  Candidates -->|5. no candidates or no gold hit| Dropped["dropped_no_candidates / dropped_no_positive — counted in BuildStats, ceiling = mean fraction of gold files retrieval actually surfaced"]
+
+  Candidates -->|5a. bulk lookup, ONE batched SQL pass over every candidate path| CtxLoad["rank/features.py:79 FeatureContext.load(conn, paths) — fills 5 dicts: lang, chunk_count, file_tokens, symbols, in/out edge degree, plus dominant_lang (repo's most common language). No per-row queries, no file reads"]
+  Candidates -->|5b. tokenize the query text| QueryTerms["text.py query_terms(query) — e.g. query='fix: retrieval ceiling drops commits with no candidates' -> terms={'fix','retrieval','ceiling','drops','commits','candidates'} (stopwords/punctuation dropped)"]
+
+  CtxLoad --> FeatureExtract
+  QueryTerms --> FeatureExtract
+
+  FeatureExtract["rank/features.py:148 extract(candidates, query_terms, ctx, history, as_of) — builds ONE row per candidate, 22 columns in FEATURE_NAMES order. as_of is the commit's own timestamp (strictly 'before' it, via History.last_touched_before/churn_between bisects) so the label never leaks into its own features. Example row, candidate path='src/hybrid_retrieval/train/dataset.py': dense_score=0.81 dense_rank=1 sparse_score=12.4 sparse_rank=2 rrf_score=0.031 n_matching_chunks=3 (copied straight off the Candidate) | path_token_overlap=|path_tokens∩terms|/|terms|={'retrieval'}/6=0.167 path_exact_hit=0.0 (stem 'dataset' not in terms) symbol_exact_match=0.0 | git_days_since_touch=2.0 git_churn_90d=4 (from history) | is_test=0.0 lang_match=1.0 file_tokens=1800 chunk_count=9 -> one float32 vector of length 22"]
+
+  FeatureExtract -->|6. label| Labels["dataset.py:137 labels[i] = 1.0 if candidate.path in gold else 0.0. Example: of 40 candidate rows, 2 get label 1.0 (the gold files) and 38 get 0.0. matrix.shape=(40,22), labels.shape=(40,), groups for this query = 40 (marks the query boundary for LightGBM)"]
+
+  Labels --> Example["Example: query, gold, matrix, labels, source"]
+
+  Example -->|7. train split only| Vstack["train/train.py:133 np.vstack(train matrices) + np.concatenate(labels) + groups=[len(candidates) per query] — LightGBM needs group boundaries to know which rows compete against each other"]
+
+  Vstack --> LGBDataset["lgb.Dataset(matrix, label, group, feature_name=FEATURE_NAMES) — train.py:137"]
+
+  LGBDataset -->|8. 200 boosting iterations| LGBTrain["train/train.py:140 lgb.train — objective='lambdarank', num_boost_round=200. Each iteration adds one new decision tree fit to the negative gradient of the current loss, learning_rate=0.05 shrinks each tree's contribution, num_leaves=15 caps tree complexity"]
+
+  LGBTrain -->|9. loss| Loss["LambdaRank pairwise loss, evaluated per query group (not per row): for every pair of candidates in the same group, the gradient is scaled by |delta NDCG@5| from swapping their rank (lambdarank_truncation_level=20 caps how deep pairs are considered). Metric tracked during training: ndcg_eval_at=[5]"]
+
+  Loss --> Booster["trained booster -> rank/scorer.py Ranker(booster, artefact)"]
+
+  Booster -->|10. score the holdout, never seen in training| Rerank["ranker.rerank(candidates, matrix) per holdout example -> model_order, vs _fused_order() baseline (retrieval's own order, unranked)"]
+
+  Rerank -->|11. compare| Metrics["eval/metrics.py MetricAccumulator — recall@1/5/10, hit@5, mrr, ndcg@10 for baseline vs trained -> TrainResult.improvement = trained.recall@5 - baseline.recall@5"]
+
+  Rerank -->|12. per holdout example| GateSignals["rank/gate.py:53 gate_signals(ordered, top_n) -> (top_score, boundary_margin = score at top_n - score at top_n+1)"]
+
+  GateSignals --> Calibrate["rank/gate.py:79 calibrate(samples, target_precision=0.85) — grid-searches (min_top_score, min_boundary_margin) pairs on holdout outcomes, picks the pair with highest coverage that still hits 85% precision; falls back to the most-precise pair if none reach it"]
+
+  Metrics --> Save
+  Calibrate --> Save["train/train.py:179 model_paths(out_root) -> booster.save_model() + meta_file.write_text(artefact.to_json()) — model, metrics and gate thresholds ship together in one artefact"]

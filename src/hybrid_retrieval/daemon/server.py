@@ -23,7 +23,7 @@ import os
 import sqlite3
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from .. import paths, trace
@@ -309,7 +309,7 @@ class Daemon:
             state.conn, prompt=prompt, result=result, session_id=request.get("session_id")
         )
         context = result.context
-        return {
+        response = {
             "ok": True,
             "context": context.text if context else "",
             "paths": result.paths,
@@ -323,6 +323,11 @@ class Daemon:
             "latency_ms": round(result.latency_ms, 2),
             "stage_ms": {k: round(v, 2) for k, v in result.stage_ms.items()},
         }
+        if request.get("rank"):
+            # The pre-cut ranked candidates, for `query --rank` to inspect score separation
+            # without paying for its own cold embedder load (decision: reuse the resident model).
+            response["fused"] = [asdict(c) for c in result.fused[:10]]
+        return response
 
 
 async def _run(cfg: Config | None = None) -> None:

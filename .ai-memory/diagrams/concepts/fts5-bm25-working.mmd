@@ -1,0 +1,53 @@
+graph TD
+    subgraph Repo[.NET Repository Structure]
+        direction LR
+        R1[📁 FTS5Demo.sln]
+        R2[📁 src/]
+        R3[📁 test/]
+        R4[📁 data/]
+        R1 --> R2 & R3 & R4
+        R2 --> R2a[FTS5Demo.Core/<br>📄 Models/Document.cs<br>📄 Services/FTS5Service.cs<br>📄 Database/DBInitializer.cs]
+        R2 --> R2b[FTS5Demo.Console/<br>📄 Program.cs]
+        R3 --> R3a[FTS5Demo.Tests/<br>📄 FTS5SearchTests.cs]
+        R4 --> R4a["sample_documents.json<br>(Seed data for indexing)"]
+    end
+
+    subgraph Storage[Data Storage Layer - FTS5 Shadow Tables]
+        S1[(Main Table<br>documents<br>id, title, body)]
+        S2[(FTS5 Virtual Table<br>fts_docs<br>title, body)]
+        S3[(Shadow Table<br>%_content<br>Stores raw text chunks)]
+        S4[(Shadow Table<br>%_docsize<br>Stores document lengths per column)]
+        S5["(Shadow Table<br>%_segments<br>Stores the Inverted Index<br>(Term → Postings List))"]
+        
+        S1 -- "INSERT triggers<br>automatic sync" --> S2
+        S2 -- "Creates internal<br>structures" --> S3 & S4 & S5
+        S5 -- "Postings List contains:<br>DocID, TF, Position offsets" --> S5
+    end
+
+    subgraph QueryPipeline[Runtime Query Pipeline]
+        U["👤 User Input Prompt<br>'How does database indexing work?'] --> T[🔧 FTS5 Tokenizer<br>(Unicode61 / Porter Stemmer)"];
+        T --> T1[Split into Tokens:<br>'how', 'does', 'database',<br>'indexing', 'work'];
+        T1 --> QE[Query Engine<br>Looks up each token in %_segments];
+        
+        QE --> QE1[Fetch Postings for 'database'];
+        QE --> QE2[Fetch Postings for 'indexing'];
+        
+        QE1 & QE2 --> BM25[⚙️ BM25 Scoring Engine];
+        
+        subgraph BM25Calc[BM25 Calculation per Document]
+            TF[Term Frequency<br>How many times in this doc]
+            DL[Doc Length<br>from %_docsize]
+            IDF["Inverse Doc Frequency<br>log(Total Docs / Docs with term)"]
+            NORM["Length Normalization<br>1 - b + b * (DL / AvgDL)"]
+            SCORE["Final Term Score<br>IDF * (TF * (k1+1) /<br>(TF + k1 * NORM))"]
+        end
+        
+        BM25 --> BM25Calc;
+        BM25Calc --> AGG[➕ Aggregate Scores<br>Sum scores across all terms];
+        AGG --> RANK[📊 Output hidden 'rank' column<br>Lower aggregate score = Higher relevance];
+        RANK --> SORT[🔽 ORDER BY rank ASC];
+        SORT --> OUT[📄 Return ranked results<br>1. Document with 'indexing' & 'database'<br>2. Document with only 'database'...];
+    end
+
+    Repo -.->|"Seeds data into"| S1
+    OUT -->|"Displayed in<br>Console / API"| R2b

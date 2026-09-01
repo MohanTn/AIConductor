@@ -415,13 +415,24 @@ def cmd_query(args: argparse.Namespace) -> int:
         from .daemon import DaemonUnavailable, request
 
         try:
-            response = request({"op": "retrieve", "repo": str(repo), "prompt": prompt})
+            # rank=True asks the daemon to also return the pre-cut ranked candidates, so --rank
+            # reuses its already-resident embedder/ranker instead of paying a cold local load.
+            response = request(
+                {"op": "retrieve", "repo": str(repo), "prompt": prompt, "rank": args.rank}
+            )
         except DaemonUnavailable as exc:
             print(f"daemon unavailable ({exc}); falling back to --local", file=sys.stderr)
         else:
             if not response.get("ok"):
                 print(f"error: {response.get('error')}", file=sys.stderr)
                 return 1
+            if args.rank and "fused" in response:
+                _render_rank(
+                    response["fused"],
+                    len(response["paths"]),
+                    response.get("reranked", False),
+                    response.get("fell_back", False),
+                )
             _print_query(response["paths"], response, args.show_context, response.get("context"))
             return 0
 
@@ -440,7 +451,8 @@ def cmd_query(args: argparse.Namespace) -> int:
                 max_seq_length=cfg.embed.max_seq_length,
                 batch_size=cfg.embed.batch_size,
             )
-        result = retrieve(repo, prompt, conn=conn, embedder=embedder, cfg=cfg)
+        ranker = _print_rank(repo, conn, prompt, cfg, embedder) if args.rank else None
+        result = retrieve(repo, prompt, conn=conn, embedder=embedder, cfg=cfg, ranker=ranker)
         summary = {
             "dense_used": result.dense_used,
             "latency_ms": round(result.latency_ms, 2),
@@ -452,6 +464,54 @@ def cmd_query(args: argparse.Namespace) -> int:
     finally:
         conn.close()
     return 0
+
+
+def _render_rank(rows: list[dict], cutoff: int, reranked: bool, fell_back: bool = False) -> None:
+    """Top-10 ranked candidates with their scores, cutoff marked where the selection was cut.
+
+    Shared by the daemon path (rows come off the wire as dicts) and the local fallback path
+    (rows are Candidate instances turned into dicts with dataclasses.asdict) so the two render
+    identically.
+    """
+    if fell_back:
+        # Decision 28: a LOW-confidence gate discards the model ranking outright and substitutes
+        # ripgrep matches, whose "model_score" is a synthetic descending rank (fallback.py), not
+        # the trained model's output. Label it as such or the table looks like a real score.
+        label = "ripgrep fallback, gate rejected the model ranking"
+    else:
+        label = "model" if reranked else "rrf-only, no trained ranker found"
+    print(f"rank ({label}):")
+    for rank, c in enumerate(rows[:10], start=1):
+        marker = " <-- selected" if rank <= cutoff else ""
+        print(
+            f"  {rank:2d}. {c['path']:<60s} rrf={c['rrf_score']:.4f} model={c['model_score']:.4f} "
+            f"dense#{c['dense_rank']} sparse#{c['sparse_rank']}{marker}"
+        )
+        if rank == cutoff:
+            print("      " + "-" * 60 + " cutoff")
+    print()
+
+
+def _print_rank(repo: Path, conn, prompt: str, cfg: Config, embedder):
+    """Local fallback for --rank when the daemon is unavailable (or --local was passed).
+
+    Loads the trained ranker the same way the daemon does (rank/scorer.py Ranker.load) and returns
+    it, so the caller can rerank the real selection with the same ranker instead of the printed
+    table disagreeing with what actually gets selected below it.
+    """
+    from dataclasses import asdict
+
+    from .rank.scorer import Ranker
+    from .retrieve.pipeline import generate_candidates, rerank as rerank_candidates
+
+    ranker = Ranker.load(repo)
+    generated = generate_candidates(conn, prompt, cfg=cfg, embedder=embedder)
+    ordered = generated.candidates
+    if ranker is not None:
+        ordered = rerank_candidates(conn, prompt, ordered, ranker=ranker)
+
+    _render_rank([asdict(c) for c in ordered], cfg.top_n, ranker is not None)
+    return ranker
 
 
 def _print_query(
@@ -581,6 +641,11 @@ def build_parser() -> argparse.ArgumentParser:
     query.add_argument("--local", action="store_true", help="bypass the daemon")
     query.add_argument("--dense", action="store_true", help="with --local, load the embedder")
     query.add_argument("--show-context", action="store_true", help="print the injected block")
+    query.add_argument(
+        "--rank",
+        action="store_true",
+        help="print the top-10 ranked candidates with rrf/model scores before the selection",
+    )
     query.set_defaults(func=cmd_query)
 
     status = sub.add_parser("status", help="show index statistics")

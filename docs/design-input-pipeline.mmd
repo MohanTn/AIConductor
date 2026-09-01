@@ -1,112 +1,86 @@
+%% As-built pipeline, superseding the original pre-implementation sequence diagram
+%% (git history: HEAD~ of this file, the .NET/Chroma/Opus Writer design).
+%% Every Note below states what was designed vs what shipped, and why it changed.
 sequenceDiagram
     autonumber
     actor User
-    participant Harness
-    participant Hook as PreProcessHook
-    participant Chroma as ChromaDB (local)
-    participant Sparse as SparseRetriever (local)
-    participant Scorer as ScoringModel
-    participant Gate as ConfidenceGate
-    participant Fallback as FallbackLoop
-    participant Writer as WriterModel (Opus)
-    participant Verifier as SilentVerifier
+    participant CC as Claude Code
+    participant Shim as hook/shim.py<br/>(UserPromptSubmit)
+    participant Daemon as daemon/server.py<br/>Daemon (resident, one per machine)
+    participant DB as SQLite index<br/>(FTS5 + sqlite-vec, one file per repo)
+    participant Ranker as rank/ LightGBM reranker
+    participant Rg as ripgrep fallback
 
     rect rgb(240, 248, 255)
-        Note over Harness, Verifier: Tier A (Local/Cheap): Chroma, Sparse, Scorer, Gate, Fallback, Verifier
-        Note over Writer: Tier B (Expensive): Writer only
+        Note over CC, Rg: DEVIATION - the original diagram had a Harness calling a separate<br/>cloud WriterModel (Opus) plus a SilentVerifier that compiled the diff.<br/>Neither exists. Claude Code is both the caller and the writer, there is<br/>no second model in this repo, no compile-and-repair loop, no cloud call.
     end
 
-    %% ========== STAGE 0: HOOK + CHROMA PRE-PROCESSING ==========
-    User ->> Harness: POST /generate<br/>{ prompt: "Add JWT refresh token rotation",<br/>  repo_id: "dotnet-api", git_ref: "heads/main" }
-    activate Harness
+    %% ========== STAGE 0: INDEX MAINTENANCE (OFF THE REQUEST PATH) ==========
+    Note over Daemon, DB: DEVIATION - designed as a Hook-triggered diff_and_refresh against<br/>Chroma, run synchronously per prompt (Stage 0 of the original diagram).<br/>Shipped as a continuous background watcher (index/RepoWatcher, 1s debounce)<br/>that never sits on the request path. Freshness key is xxhash3-128 of<br/>WORKING-TREE CONTENT, not a git hash, because the files an agent is<br/>mid-edit on are uncommitted, and those are exactly the ones retrieval<br/>must not be stale on. Changed files are re-chunked with tree-sitter at<br/>symbol granularity, FTS5 rows and import-graph edges rebuilt, dense<br/>vectors marked pending for the async backfill loop (Daemon._backfill_loop).
 
-    Harness ->> Hook: onPromptReceived(payload)
-    activate Hook
+    %% ========== STAGE 1: THE HOOK ==========
+    User ->> CC: types a prompt
+    CC ->> Shim: UserPromptSubmit (JSON on stdin)
+    activate Shim
+    Note over Shim: DEVIATION - designed as an HTTP POST to a Harness process.<br/>Shipped as a stdlib-only, dependency-free CLI shim (hook/shim.py)<br/>invoked as a subprocess. Import cost is user-visible latency on every<br/>prompt, so nothing beyond the standard library loads here. All real<br/>work happens in the resident daemon over a Unix socket.
 
-    Hook ->> Chroma: diff_and_refresh(git_hash, file_list)
-    activate Chroma
-    Note over Chroma: IN: git_hash, file_deltas (from git diff)<br/>---<br/>PSEUDO-CODE:<br/>1. loaded_manifest = load_manifest(git_hash)<br/>2. FOR each file IN loaded_manifest.files:<br/>   current_hash = xxhash3_128(file.path)<br/>   IF current_hash != stored_hash:<br/>       invalidate_chunks(file.path)<br/>3. FOR each invalid_chunk:<br/>   embed = local_model.encode(chunk.content)<br/>   chroma_db.upsert(id=chunk.id, vector=embed,<br/>                   metadata={"path": file.path, "git": git_hash})<br/>4. ast_graph = rebuild_ast_from_changed_files(file.list)<br/>---<br/>OUT: { status: "ready", version_hash: "abc123",<br/>       ast_graph: { nodes: ["AuthController.cs"],<br/>                    edges: [["AuthController.cs", "JwtService.cs"]] } }
-    Chroma -->> Hook: snapshot_ready
-    deactivate Chroma
-    deactivate Hook
-
-    %% ========== STAGE 1: HYBRID RETRIEVAL (DENSE + SPARSE) ==========
-    par Dense Retrieval (Local)
-        Harness ->> Chroma: query_dense(prompt_embedding, top_k=100)
-        activate Chroma
-        Note over Chroma: IN: embedding=[0.12, -0.45, ...] (768-dim)<br/>---<br/>PSEUDO-CODE:<br/>results = chroma_db.query(<br/>    query_embeddings=[embedding],<br/>    n_results=100,<br/>    where={"git": active_version_hash},<br/>    include=["metadatas", "distances"]<br/>)<br/>FOR each hit:<br/>  dense_score = 1 - (distance / 2)  # cosine normalization<br/>---<br/>OUT: [{ path: "AuthController.cs", dense_score: 0.92 },<br/>      { path: "JwtService.cs", dense_score: 0.88 }, ...]
-        Chroma -->> Harness: dense_candidates
-        deactivate Chroma
-    and Sparse Retrieval (Local)
-        Harness ->> Sparse: query_sparse(prompt_tokens, ast_graph)
-        activate Sparse
-        Note over Sparse: IN: tokens=["JWT","refresh","token","rotation"]<br/>     ast_graph (structural adjacency)<br/>---<br/>PSEUDO-CODE:<br/>1. bm25_results = inverted_index.search(tokens, top_k=80)<br/>2. boost_results = ast_graph.traverse_imports(<br/>     entrypoints=bm25_results.paths, depth=2)<br/>3. FOR each path:<br/>   sparse_score = bm25_score + (0.1 * boost_factor)<br/>---<br/>OUT: [{ path: "AuthController.cs", sparse_score: 0.85 },<br/>      { path: "Startup.cs", sparse_score: 0.72 }, ...]
-        Sparse -->> Harness: sparse_candidates
-        deactivate Sparse
+    Shim ->> Daemon: op retrieve, repo, prompt, assemble false<br/>over daemon.sock, 3s timeout (HYBRID_RETRIEVAL_TIMEOUT)
+    activate Daemon
+    alt daemon unreachable
+        Daemon --x Shim: connection refused or timeout
+        Shim ->> Shim: autostart(), spawn hybrid-retrieval serve detached, exit 0
+        Note over Shim: This prompt gets nothing, the next one will.<br/>Fails open, always. Any error, timeout, missing daemon or unindexed<br/>repo results in exit 0 with no injected context (ground rule in CLAUDE.md).
     end
 
-    %% ========== STAGE 2: FUSION -> TOP 100 ==========
-    Harness ->> Harness: normalize_dedup_fuse(dense, sparse)
-    activate Harness
-    Note over Harness: IN: dense_list (100 items) + sparse_list (100 items)<br/>---<br/>PSEUDO-CODE (Reciprocal Rank Fusion):<br/>UNION_SET = dense_list ∪ sparse_list<br/>FOR each path IN UNION_SET:<br/>  rank_dense = index_of(path, dense_list) or INF<br/>  rank_sparse = index_of(path, sparse_list) or INF<br/>  rrf_score = (1/(60+rank_dense)) + (1/(60+rank_sparse))<br/>SORT BY rrf_score DESC<br/>TAKE TOP 100<br/>---<br/>OUT: [ { path: "AuthController.cs", fused_score: 0.031 },<br/>       { path: "JwtService.cs", fused_score: 0.029 },<br/>       { path: "appsettings.json", fused_score: 0.015 }, ...]
-    deactivate Harness
+    %% ========== STAGE 2: SKIP RULE ==========
+    Note over Daemon: skip.should_skip(prompt, cfg.skip), fires before any retrieval work.<br/>Patterns, then meta-questions, then usable query terms after stopword<br/>removal (min 2). A skipped prompt still returns a result (skipped equals<br/>reason), did nothing and never ran must not look identical in the trace.
 
-    %% ========== STAGE 3: LOCAL SCORING (Cross-Attention / LoRA) ==========
-    Harness ->> Scorer: score_candidates(prompt, top_100, first_10_lines)
-    activate Scorer
-    Note over Scorer: IN: prompt (string), top_100 (list of paths),<br/>     first_10_lines (string) for each candidate<br/>---<br/>PSEUDO-CODE (Fine-tuned Quantized 3B Model):<br/>FOR each candidate IN top_100:<br/>  input_text = "[PROMPT] " + prompt + " [FILE] " + candidate.path + " " + candidate.first_10_lines<br/>  logit = local_lora_model.forward(input_text)  # rank=16 LoRA adapter<br/>  # logit represents alignment with expert retrieval behavior<br/>---<br/>OUT: [ { path: "AuthController.cs", score: 2.4 },<br/>       { path: "JwtService.cs", score: 1.8 },<br/>       { path: "Program.cs", score: 0.4 }, ... ]
-    Scorer -->> Harness: score_vector
-    deactivate Scorer
-
-    %% ========== STAGE 4: CONFIDENCE GATING & FALLBACK ==========
-    Harness ->> Gate: evaluate(scores)
-    activate Gate
-    Note over Gate: IN: score_vector (100 logits)<br/>---<br/>PSEUDO-CODE:<br/>softmax_scores = softmax(score_vector / 0.7) # temperature<br/>max_prob = max(softmax_scores)<br/>margin = softmax_scores[0] - softmax_scores[1]<br/>IF max_prob > 0.85 AND margin > 0.15:<br/>    confidence = HIGH<br/>ELSE:<br/>    confidence = LOW<br/>---<br/>OUT: decision: "HIGH" or "LOW"
-    Gate -->> Harness: decision
-    deactivate Gate
-
-    alt High Confidence (Fast Path)
-        Harness ->> Harness: select_top_5()
-        Note over Harness: Top 5: AuthController.cs, JwtService.cs,<br/>appsettings.json, Program.cs, IJwtService.cs
-    else Low Confidence / High Entropy (Fallback)
-        Harness ->> Fallback: targeted_grep_and_cat()
-        activate Fallback
-        Note over Fallback: IN: prompt_keywords: ["Jwt", "RefreshToken"]<br/>---<br/>PSEUDO-CODE (Deterministic):<br/>1. files = grep -l -r "RefreshToken" --include="*.cs" ./src<br/>2. files += grep -l -r "JwtSecurityToken" --include="*.cs" ./src<br/>3. FOR each file IN files: content = cat(file)<br/>4. VALIDATE content contains necessary imports<br/>---<br/>OUT: verified_top_5 = [ "AuthController.cs", "JwtService.cs", ... ]
-        Fallback -->> Harness: verified_top_5
-        deactivate Fallback
+    %% ========== STAGE 3: CANDIDATE GENERATION ==========
+    par Sparse (always) - retrieve/sparse.py
+        Daemon ->> DB: FTS5 BM25, top 80 (cfg.retrieval.sparse_k)
+        DB -->> Daemon: sparse candidates
+    and Dense (only when the loaded model matches the index) - retrieve/dense.py
+        Daemon ->> DB: int8 KNN top 200 (rescore_k), then float32 rescore
+        Note over DB: DEVIATION - designed against Chroma with a 768-dim vector and a<br/>separate query_dense call. Shipped as sqlite-vec in the SAME database<br/>file as FTS5 (dense_is_ready in retrieve/pipeline.py checks the index's<br/>recorded model id and dim against the loaded embedder, a mismatch just<br/>skips dense rather than erroring). No ANN index exists in sqlite-vec, so<br/>the int8 scan is linear and float32 rescore restores precision on the survivors.
+        DB -->> Daemon: dense candidates
     end
 
-    %% ========== STAGE 5: ESCALATION & WRITER (TIER B) ==========
-    Note over Harness: ----- ESCALATION BOUNDARY (Local -> Cloud) -----
-    Harness ->> Harness: assemble_slim_context(top_5)
-    activate Harness
-    Note over Harness: IN: top_5 file contents + AST subtree (depth=2)<br/>     + hardcoded: .csproj / package.json<br/>---<br/>PSEUDO-CODE:<br/>context = "System: You are a .NET 8 expert. No tools.<br/>           Write code. Here are relevant files:\n"<br/>FOR each file IN top_5:<br/>  context += "--- " + file.path + " ---\n" + file.content<br/>context += "AST Tree: " + ast_graph.stringify_subtree(top_5)<br/>context += "Dependencies: Microsoft.AspNetCore.Authentication.JwtBearer"<br/>---<br/>OUT: total_context_tokens = 3,842 (< 4k limit)
-    deactivate Harness
+    %% ========== STAGE 4: FUSION ==========
+    Daemon ->> Daemon: rrf_fuse(dense, sparse, k=60), cut to 50 (fuse_to)
+    Note over Daemon: DEVIATION - designed as union two 100-lists, take top 100, with an<br/>AST-boosted sparse stage (import traversal, depth 2, always on).<br/>Shipped as RRF fusion cut to 50, and AST expansion defaults OFF<br/>(cfg.retrieval.ast_depth = 0), measured neutral-to-negative versus BM25<br/>alone. The import graph is still built and still feeds the reranker as<br/>in/out-degree features, only the candidate-expansion use stopped.
 
-    Harness ->> Writer: POST /v1/messages (Opus, streaming=True)
-    activate Writer
-    Note over Writer: IN: system_prompt + 3.8k context<br/>---<br/>PSEUDO-CODE (Cloud Inference):<br/>KV Cache = allocate(prompt_tokens)<br/>WHILE not done:<br/>  token = sample(top_k=40, temperature=0.3)<br/>  append to KV Cache<br/>  yield token (streaming)<br/>---<br/>OUT: Streamed Unified Diff
-    Writer -->> User: stream diff (eventsource)
-    Writer -->> Harness: raw_diff_payload
-    deactivate Writer
-    Harness ->> Verifier: validate_diff(diff, git_hash)
-    activate Verifier
-    Note over Verifier: IN: unified_diff, git_hash<br/>---<br/>PSEUDO-CODE (Local compile):<br/>1. apply_diff_to_temp_workspace(diff, git_hash)<br/>2. cd temp_workspace && dotnet build --no-incremental 2>&1 > compile.log<br/>3. IF exit_code == 0: status = PASS<br/>4. ELSE: status = FAIL,<br/>   missing = regex_search(stderr, "CS0246|CS0103", group="type")<br/>   # Example: missing "Microsoft.IdentityModel.Tokens"<br/>---<br/>OUT: { status: "FAIL", error: "CS0246", symbol: "Microsoft.IdentityModel.Tokens" }
-    deactivate Verifier
+    %% ========== STAGE 5: RERANK (replaces the local Scorer tier) ==========
+    Daemon ->> Ranker: rerank(candidates, 22 features) - rank/features.py + rank/gate.py
+    activate Ranker
+    Note over Ranker: DEVIATION - designed as a fine-tuned quantized 3B LoRA model doing 100<br/>forward passes per prompt, prompt plus file text into a logit.<br/>Shipped as a LightGBM lambdarank model over structured features (dense<br/>and sparse scores and ranks, RRF, matching chunks, AST degree, path-token<br/>overlap, symbol exact match, file size, is_test, is_generated, is_doc,<br/>is_config, is_script, point-in-time git recency and churn). A missing or<br/>unloadable ranker is not fatal, retrieve() leaves the fused RRF order in<br/>place (Daemon._state loads it once per repo and logs, never raises).<br/>Trained on real prompts mined from agent session history, not commit messages.
+    Ranker -->> Daemon: reranked order plus GateDecision
+    deactivate Ranker
 
-    alt Compilation PASSES
-        Verifier -->> Harness: status OK
-        Harness -->> User: "Apply Changes" (200 OK)
-    else Compilation FAILS (Missing Import)
-        Verifier -->> Harness: error + missing_symbol
-        Harness ->> Fallback: grep_missing_symbol(missing_symbol)
-        activate Fallback
-        Fallback -->> Harness: import_line<br/>(e.g., "using Microsoft.IdentityModel.Tokens")
-        deactivate Fallback
-        Note over Harness: SINGLE-HOP REPAIR (No re-retrieval)<br/>Pseudo: inject import_line into the exact file section
-        Harness ->> Writer: re-prompt_with_patch(patch)
-        activate Writer
-        Writer -->> User: stream_corrected_diff
-        deactivate Writer
+    %% ========== STAGE 6: CONFIDENCE GATE + FALLBACK ==========
+    Note over Daemon: DEVIATION - designed as softmax over 100 logits with max_prob above<br/>0.85 and margin above 0.15 over a temperature-scaled distribution,<br/>judging the single best file. Shipped as rank/gate.evaluate(): judges<br/>the SET, the trained ranker's top_score against min_top_score, and the<br/>margin between the last-selected and first-rejected candidate against<br/>min_boundary_margin. Both thresholds are calibrated on held-out data<br/>(gate.calibrate) and stored in the model artefact, not guessed.
+
+    alt HIGH confidence
+        Daemon ->> Daemon: selected equals ordered top_n (default 5)
+    else LOW confidence
+        Daemon ->> Rg: ripgrep_candidates(repo_root, prompt, allowed indexed paths)
+        Note over Rg: Same idea as the original diagram's targeted grep and cat, but it<br/>REPLACES the ranking wholesale (decision 28) rather than being a<br/>separate verification pass, and only ripgrep is used, never plain grep,<br/>so it respects .gitignore and skips binaries. It is also literally the<br/>function the benchmark's B0 arm calls, what the pipeline falls back to<br/>and what it must beat are the same implementation.
+        Rg -->> Daemon: ranked paths
     end
-    deactivate Harness
+
+    %% ========== STAGE 7: ASSEMBLY / RENDER, now paths-only ==========
+    Note over Daemon: DEVIATION (most recent, SPEC 10j, decision 29 reversed by measurement)<br/>- the original assemble_slim_context built a roughly 3.8k-token bundle<br/>of full file contents plus AST subtree plus a hardcoded dependency<br/>manifest, sent to the Writer. retrieve/pipeline.py still CAN assemble<br/>full content (tiered, small file whole with comments stripped, large<br/>file imports plus signatures only) but only when a caller asks for it,<br/>the CLI query command and the dashboard probe endpoint do. The hook<br/>passes assemble false, assembling the top 5 of this repo for one prompt<br/>measured about 19,600 tokens against a roughly 2,095 token break-even,<br/>and hook output above roughly 40KB gets spilled by the harness to a<br/>file the agent then spends turns reading. So the request that matters<br/>most gets NO file contents from the daemon at all.
+
+    Daemon ->> DB: trace.record(prompt, result, session_id), writes traces table
+    Daemon -->> Shim: ok, paths, tokens, dense_used, reranked,<br/>fell_back, skipped, gate, trace_id, latency_ms, stage_ms
+    deactivate Daemon
+
+    Shim ->> Shim: render(paths) builds a retrieved-context block,<br/>numbered path list only, no file contents (hook/shim.py)
+    Note over Shim: HEADER is explicit about weight, a ranked guess not a constraint,<br/>open what looks useful and ignore the rest. Paths cost roughly 2% of<br/>full-content assembly and still remove the search, the agent opens<br/>named files instead of grepping for them.
+    Shim -->> CC: hookSpecificOutput.additionalContext (or nothing, exit 0)
+    deactivate Shim
+    CC ->> User: response, with the ranked files already named in context
+
+    %% ========== ADDED, NOT IN THE ORIGINAL DESIGN AT ALL ==========
+    rect rgb(255, 248, 240)
+        Note over Daemon: NEW COMPONENT, no equivalent in the original design, a local HTTP<br/>dashboard (dashboard/server.py plus api.py) for inspecting index status,<br/>per-repo config overrides, trace history, and a manual probe that runs<br/>retrieve() with full assembly and shows every stage's contribution<br/>(dense, sparse, fuse, rerank, gate). Off the request path entirely,<br/>started via the dashboard CLI command, not wired into UserPromptSubmit.
+    end

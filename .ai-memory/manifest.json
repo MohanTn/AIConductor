@@ -29,6 +29,11 @@
       "keywords": ["bug", "debug", "regression", "stale daemon", "not working"],
       "file": "diagrams/debug/playbook.mmd",
       "priority": 9
+    },
+    {
+      "keywords": ["train_ranker", "lambdarank", "lightgbm", "split_by_time", "holdout", "80/20", "training data set", "num_boost_round", "gate calibrate", "build_examples"],
+      "file": "diagrams/train/ranker-training.mmd",
+      "priority": 8
     }
   ]
 }

@@ -1,51 +1,84 @@
 flowchart TD
-  Prompt["UserPromptSubmit event (stdin JSON)"] --> Shim["hook/shim.py main()"]
-  Shim -->|"unix socket, 3s timeout, fail open"| DaemonSock["daemon.sock"]
-  Shim -->|"daemon unreachable"| Autostart["autostart(): spawn 'hybrid-retrieval serve' detached"]
-  Shim -->|"response.ok"| Render["render(paths) -> <retrieved-context> path list only, no file contents"]
+  classDef note fill:#fff3bf,stroke:#f08c00,stroke-width:1px,color:#1e1e1e
+  classDef correction fill:#ffc9c9,stroke:#c92a2a,stroke-width:1px,color:#1e1e1e
 
-  DaemonSock --> Dispatch["daemon/server.py Daemon.dispatch(op)"]
-  Dispatch -->|ping| Ping["health/version reply"]
-  Dispatch -->|retrieve| Retrieve["_retrieve(): resolve repo, _state(), backfill loop"]
-  Dispatch -->|shutdown| Shutdown["_shutdown_soon()"]
+  Prompt["1. UserPromptSubmit event, stdin JSON -- in: raw JSON text on stdin -> out: {'prompt':'fix the JWT refresh token bug','cwd':'/home/mohan/REPO/hybrid-retrieval-pipeline','session_id':'abc-123'}"] --> Shim["2. hook/shim.py main() -- stdlib only, zero imports beyond os/socket/json (decision 4) -- in: the event dict above -> out: socket payload {op:'retrieve',repo:'/home/.../hybrid-retrieval-pipeline',prompt:'fix the JWT refresh token bug',session_id:'abc-123',assemble:false}, or exit 0 if prompt empty / repo not found"]
+  Shim -->|"3. connect AF_UNIX, 3.0s timeout (env HYBRID_RETRIEVAL_TIMEOUT) -> $XDG_CACHE_HOME/hybrid-retrieval/daemon.sock"| DaemonSock(("daemon.sock -- in: payload dict -> out: one JSON line back, newline-terminated"))
+  Shim -->|"3b. OSError: no socket -- fail open, exit 0, inject nothing"| Autostart["autostart() -- in: OSError (connect refused/no such file) -> out: detached Popen('python -m hybrid_retrieval.cli serve'); THIS call still returns None to the shim, singleton-lock guarded"]
 
-  Retrieve --> PipelineRetrieve["retrieve/pipeline.py retrieve()"]
+  DaemonSock --> Dispatch["4. daemon/server.py Daemon.dispatch(op) -- in: {'op':'retrieve','repo':...,'prompt':...,'assemble':false} -> out: routes to _retrieve() (ping -> health+embedder id dict, shutdown -> sleeps 0.05s then stops)"]
+  Dispatch -->|"5. op=retrieve"| Retrieve["_retrieve() -- in: repo path + prompt -> out: RetrievalResult (via retrieve() below), then wrapped into the response JSON at step 15"]
+  Retrieve --> PipelineRetrieve["retrieve/pipeline.py retrieve(repo_root, prompt) -- latency_budget_ms=3000 -- in: ('/home/.../hybrid-retrieval-pipeline', 'fix the JWT refresh token bug') -> out: RetrievalResult"]
 
-  subgraph Stages["retrieve.pipeline stages (each degrades, never fails)"]
+  subgraph Stages["retrieve.pipeline stages -- every stage after sparse degrades, never raises"]
     direction TB
-    Skip["skip.should_skip(prompt) -- gate out noise prompts"]
-    Gen["generate_candidates(): sparse + dense -> rrf_fuse"]
-    Sparse["sparse.sparse_candidates: BM25 + AST-expand"]
-    Dense["dense.dense_candidates: vector search (needs embedder + dense_ready)"]
-    Fuse["fusion.rrf_fuse"]
-    Rerank["rerank(): rank.features.extract -> Ranker.rerank (trained model, else fused order stands)"]
-    Gate["rank.gate.evaluate -> GateDecision (HIGH/LOW confidence)"]
-    Fallback["fallback.ripgrep_candidates (low confidence override)"]
-    Assemble["assemble.assemble -> ContextPack (skipped when assemble=False, paths-only)"]
-    Skip --> Gen --> Sparse & Dense
-    Sparse --> Fuse
-    Dense --> Fuse
-    Fuse --> Rerank --> Gate
-    Gate -->|low confidence| Fallback
-    Gate -->|high confidence| Assemble
-    Fallback --> Assemble
+    Skip["6. skip.should_skip(prompt) -- in: 'fix the JWT refresh token bug' -> query_terms() drops stopwords, keeps identifiers -> ['fix','jwt','refresh','token','bug'], 5 terms -- out: SkipDecision(skip=False). Load-bearing rule is term count, not length: 'could you please have another look at that' is 42 chars and skips (0 usable terms), 'fix JWT bug' is 11 and does not"]
+    SkipReturn["in: SkipDecision(skip=True, reason=matched pattern '^(yes|yep|ok...)') e.g. prompt='ok' -> out: RetrievalResult(skipped=reason, context=ContextPack(text='')) -- Gen/Sparse/Dense/Fuse/Rerank/Gate/Assemble never run"]
+    Gen["7. generate_candidates() -- sparse_candidates() then dense_candidates(), SEQUENTIAL not parallel, each timed() -- in: 'fix the JWT refresh token bug' -> out: CandidateSet(candidates=<=50 fused Candidate rows, dense_used=bool, stage_ms per sub-stage)"]
+    Sparse["8a. sparse.sparse_candidates -- BM25 rollup + AST expand, sparse_k=80 -- in: query_terms=['fix','jwt','refresh','token','bug'] -> out: e.g. tests/fixtures/csharp/JwtService.cs at sparse_rank=0 (lexical hit on 'jwt'+'refresh'+'token')"]
+    Dense["8b. dense.dense_candidates -- int8 scan, float32 rescore, dense_k=100 -- in: query embedding, shape [768] or [1024] depending on loaded model -> out: e.g. tests/fixtures/typescript/authService.ts at dense_rank=0 (closest cosine match on 'refresh token' semantics)"]
+    Fuse["9. fusion.rrf_fuse -- k=60, limit=50 -- in: sparse list (<=80) + dense list (<=100) -> out: e.g. tests/fixtures/csharp/JwtService.cs at rrf_score=0.032266 (worked math in the note below)"]
+    Rerank["10. rerank() -- FeatureContext.load + extract() -> Ranker.rerank (LightGBM lambdarank) -- in: 50 fused Candidates + a [50, 22] feature matrix -> out: same 50 Candidates reordered by model_score, e.g. JwtService.cs -> model_score=2.31, now rank 0"]
+    Gate["11. rank.gate.evaluate -- margin-based confidence, not softmax -- in: 50 reranked Candidates, top_n=5 -> out: GateDecision(decision='HIGH', top_score=2.31, boundary_margin=0.42) or 'LOW'"]
+    Fallback["12. fallback.ripgrep_candidates -- limit=fuse_to=50, allowed=indexed paths only -- in: prompt + set of indexed paths -> out: e.g. ['tests/fixtures/csharp/JwtService.cs','tests/fixtures/python/auth_service.py'] (grep hit on 'refresh'), or [] if nothing found"]
+    Assemble["13. assemble.assemble -> ContextPack -- full file contents, uncapped (max_tokens=None default) -- in: top-5 selected Candidates -> out: ContextPack(text='<retrieved-context>...JwtService.cs source...AuthController.cs source...</retrieved-context>', tokens~19600) -- or ContextPack(text='',paths=[...]) when assemble=False, as the shim always sends"]
+
+    Skip -->|"skip=True: '/clear', 'ok', <8 chars, <2 terms"| SkipReturn
+    Skip -->|"skip=False, 5 terms >= 2"| Gen
+    Gen --> Sparse
+    Gen --> Dense
+    Sparse -->|"<=80 files, sparse_rank 0..79, ast_hops set"| Fuse
+    Dense -->|"<=100 files, dense_rank 0..99, n_matching_chunks set"| Fuse
+    Fuse -->|"top 50 of <=180 unique paths, sorted by (-rrf_score, path)"| Rerank
+    Rerank --> Gate
+    Gate -->|"LOW: boundary margin < calibrated threshold, and ripgrep finds hits -- REPLACES the ranking outright (fell_back=True), does not blend"| Fallback
+    Gate -->|"LOW, but ripgrep finds nothing -- falls through, silently keeps the LOW-confidence reranked order (fell_back stays False)"| Assemble
+    Gate -->|"HIGH: top_score >= min_top_score AND margin >= min_boundary_margin"| Assemble
+    Fallback -->|"matches found"| Assemble
   end
 
   PipelineRetrieve --> Stages
-  Assemble --> TraceRow["trace.record() -> traces table"]
-  TraceRow --> Retrieve
-  Retrieve --> Dispatch
+  SkipReturn --> TraceRow
+  Assemble --> TraceRow["14. trace.record(conn, prompt, result, session_id) -> traces table -- runs unconditionally, skipped prompts are traced too -- in: RetrievalResult -> out: trace_id, e.g. 4821, one row written to the traces table"]
+  TraceRow --> ResultOut["15. daemon response assembly -- in: RetrievalResult{selected: 5 Candidates, gate=HIGH, fell_back=False, stage_ms, latency_ms} -> out: {'ok':true,'context':'','paths':['tests/fixtures/csharp/JwtService.cs',...5 total],'tokens':0,'dense_used':true,'reranked':true,'fell_back':false,'gate':'HIGH','trace_id':4821,'latency_ms':842.3,'stage_ms':{...}}"]
+  ResultOut --> Dispatch
+  Dispatch --> DaemonSock
+  DaemonSock -->|"16. response.ok=true, paths only (shim sent assemble:false, so context/tokens come back empty)"| Render["render(paths) -- in: paths=['tests/fixtures/csharp/JwtService.cs','tests/fixtures/csharp/AuthController.cs','tests/fixtures/python/auth_service.py','tests/fixtures/typescript/authService.ts','tests/fixtures/go/auth_service.go'] -> out: '<retrieved-context>\\n...\\n 1. tests/fixtures/csharp/JwtService.cs\\n 2. tests/fixtures/csharp/AuthController.cs\\n 3. ...\\n</retrieved-context>' -- NOT file contents"]
 
-  subgraph Index["index build (separate from query path)"]
-    Walker["index/walker.py discover()"] --> Indexer["index/indexer.py index_repo()"]
-    Indexer --> LangAdapters["lang/*.py adapter_for(lang).chunk/symbols/import_refs"]
-    Indexer --> Edges["index/edges.py rebuild_edges (import graph)"]
-    Indexer --> Backfill["embed/backfill.py embed_pending() (dense vectors, async loop in daemon)"]
+  SparseNote["deep dive on Sparse --<br/>in: prompt terms, sparse_k=80<br/>mechanism: bm25_files() fetches limit*10=800 chunk rows (CHUNKS_PER_FILE_BUDGET), rolls the max score up to one-per-file in PYTHON because SQLite's bm25() is an FTS5 aux function and can't run inside an aggregate; expand_by_ast then walks the edge table breadth-first, decaying score by 0.35^hop per hop (AST_DECAY)<br/>cost: ast_depth defaults to 0 in Config -- the module's own default (depth=2) is dead code in production. Measured three times: enabling depth-2 moved the pipeline from +14.1pp to +11.3pp over ripgrep, and hit@5 from 0.899 down to 0.861<br/>out: <=80 Candidates, sparse_rank + ast_hops set"]
+  Sparse -.-> SparseNote
+  class SparseNote correction
+
+  DenseNote["deep dive on Dense --<br/>in: query embedding via Qwen/Qwen3-Embedding-0.6B, max_seq_length=512<br/>mechanism: coarse pass is a LINEAR SCAN over int8 vectors (sqlite-vec has no ANN index) -- 1 byte/dim instead of 4 -- keeps top rescore_k=200 by approximate distance; exact pass recomputes float32 cosine for only those 200 (both sides L2-normalised, so dot product IS cosine similarity)<br/>cost: dense_is_ready() compares stored (model_id,dim) to the loaded embedder; a mismatch (e.g. index built at 768d, model swapped to 1024d) skips dense entirely rather than crash on a SQL dimension error<br/>out: <=100 Candidates, dense_rank + n_matching_chunks set"]
+  Dense -.-> DenseNote
+  class DenseNote note
+
+  FuseNote["deep dive on Fuse --<br/>RRF, k=60 (DEFAULT_RRF_K), limit=50<br/>formula: score = 1/(k+dense_rank+1) + 1/(k+sparse_rank+1)<br/>worked: JwtService.cs at dense_rank=0, sparse_rank=2 -> 1/(60+0+1) + 1/(60+2+1) = 1/61 + 1/63 = 0.016393 + 0.015873 = 0.032266<br/>a file present in only ONE list still scores (the missing term is just dropped, not zero-filled), so it ranks lower but is never excluded outright"]
+  Fuse -.-> FuseNote
+  class FuseNote note
+
+  GateNote["CORRECTION -- an earlier version of this diagram gated on softmax(100 logits), max_prob>0.85: unreachable in practice, and it judges the single best file when the pipeline actually ships a SET of 5<br/>real rule: margin = model_score[top_n-1] - model_score[top_n] (the 5th selected candidate vs the 1st rejected one); HIGH iff top_score>=min_top_score AND margin>=min_boundary_margin<br/>thresholds come from calibrate(): grid-search over observed (score,margin,was_correct) triples, keeps the pair with the widest coverage at >=85% precision (target_precision=0.85), falls back to the most-precise pair otherwise -- a bad ranker becomes a quiet gate, not a confidently wrong one"]
+  Gate -.-> GateNote
+  class GateNote correction
+
+  FeatureNote["CORRECTION -- markdown lexically matches almost any prompt: measured on held-out prompts it filled 117 of the top-5 slots while only 61 were ever needed (30% precision); shell files hit 8%. A single 'matches dominant language' flag can't express that discount, so is_doc/is_config/is_script/lang_match are separate features and the model learns the penalty itself.<br/>22 FEATURE_NAMES total: dense/sparse score+rank, rrf_score, n_matching_chunks, ast_hops/in-degree/out-degree, path_token_overlap, path_exact_hit, symbol_exact_match, file_tokens, chunk_count, is_test, is_generated, lang_match, is_doc, is_config, is_script, git_days_since_touch, git_churn_90d"]
+  Rerank -.-> FeatureNote
+  class FeatureNote correction
+
+  RenderNote["CORRECTION -- decision 29 originally shipped full file contents in the hook; measurement reversed it. Assembling this repo's top-5 for one real prompt: 78,260 chars ~= 19,600 tokens, against a ~2,095 token break-even point, and Claude Code spills any hook output over ~40KB to a file the agent then spends a whole turn reading. A path list costs roughly 2% of that token budget and the agent still opens the 3 named files itself instead of grepping for them"]
+  Render -.-> RenderNote
+  class RenderNote correction
+
+  subgraph Index["index build -- separate from the query path, feeds Sparse/Dense"]
+    Walker["walker.py discover() -- git ls-files, classify_lang, skips binaries/oversized (max_file_bytes=1,048,576); fs watcher debounces bursts at debounce_ms=1000 -- in: repo root path -> out: FileRecord[] e.g. {path:'tests/fixtures/csharp/JwtService.cs', lang:'csharp', size:...}"] --> Indexer["indexer.py index_repo() -- content-addressed via hash_file(), only touched files reprocess -- in: FileRecord[] -> out: rows written to files/chunks/symbols tables, IndexStats(touched=N)"]
+    Indexer --> LangAdapters["lang/*.py adapter_for(lang).chunk/symbols/import_refs -- tree-sitter for python/typescript/csharp/golang, FallbackAdapter (fixed-window chunks) otherwise -- in: JwtService.cs source bytes -> out: Chunk[] (class JwtService), Symbol[] (IJwtService, JwtService, Issue, Token), ImportRef[]"]
+    Indexer --> Edges["index/edges.py rebuild_edges -- import graph, fanout capped per namespace -- in: ImportRef rows -> out: edges table rows (src,dst) e.g. (AuthController.cs, JwtService.cs)"]
+    Indexer --> Backfill["embed/backfill.py embed_pending() -- async loop every backfill_interval_s=5.0s, batch_size=8 chunks, files_per_batch=16, skips chunks under min_chunk_tokens=15 (still BM25-searchable, just not embedded) -- in: pending chunk texts (dense_ready=0) -> out: float32 rows in chunk_vectors + int8 rows in vec_chunks, dense_ready flips to 1"]
   end
 
-  Index -.->|feeds| Sparse
-  Backfill -.->|feeds| Dense
+  Index -.->|"feeds"| Sparse
+  Backfill -.->|"feeds, quantised to int8 for storage + coarse scan (decision 12: sized for a 4GB card)"| Dense
 
-  CLI["cli.py cmd_index / cmd_embed / cmd_train"] --> Index
-  CLI --> TrainRanker["train/train.py train_ranker (mines git history + sessions)"]
-  TrainRanker -.->|writes model| Rerank
+  CLI["cli.py cmd_index / cmd_embed / cmd_train -- in: argv e.g. 'hybrid-retrieval index' -> out: dispatches to the matching cmd_* function"] --> Index
+  CLI --> TrainRanker["train/train.py train_ranker -- mines git history (gitlog.History) + agent sessions (claude_code/copilot/pi sources), fits LightGBM lambdarank over per-query groups, split_by_time holds out the newest slice as eval -- in: git log + session transcripts -> out: ranker.txt (booster) + ranker.json (feature_names, metrics, gate thresholds)"]
+  TrainRanker -.->|"writes ranker.txt + ranker.json (feature_names, gate thresholds)"| Rerank
